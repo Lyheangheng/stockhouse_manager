@@ -1,0 +1,2811 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ระบบจัดการคลังสินค้าอาหารสัตว์ | คลังกลาง &amp; 3 สาขาย่อย</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Prompt & Sarabun สำหรับภาษาไทยที่อ่านง่าย ทันสมัย -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Prompt', 'Sarabun', 'sans-serif'],
+            body: ['Sarabun', 'Prompt', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              200: '#a7f3d0',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+              800: '#065f46',
+              900: '#064e3b',
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    /* ปรับแต่ง Scrollbar และแอนิเมชันพื้นฐาน */
+    body {
+      font-family: 'Prompt', 'Sarabun', sans-serif;
+      background-color: #f8fafc;
+      color: #1e293b;
+    }
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
+    }
+    @keyframes slideInRight {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+    @keyframes fadeOut {
+      from {
+        opacity: 1;
+      }
+      to {
+        opacity: 0;
+        transform: translateY(-6px);
+      }
+    }
+    .toast-enter {
+      animation: slideInRight 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .toast-exit {
+      animation: fadeOut 0.25s ease-in forwards;
+    }
+    /* ซ่อนลูกศร spin เริ่มต้นของ input number เพื่อใช้ปุ่ม +/- ที่สวยกว่า */
+    input[type='number']::-webkit-inner-spin-button,
+    input[type='number']::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type='number'] {
+      -moz-appearance: textfield;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-slate-50 text-slate-800 antialiased">
+
+  <!-- ===================================================================== -->
+  <!-- ROOT APPLICATION MOUNT CONTAINER (LOGIN OR AUTHENTICATED WORKSPACE)   -->
+  <!-- ===================================================================== -->
+  <div id="appRoot" class="min-h-screen flex flex-col">
+    <!-- Rendered dynamically by renderApp() -->
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODALS CONTAINER (Restock, Add Product, Confirm Reset/Reject)         -->
+  <!-- ===================================================================== -->
+  <div id="modalBackdrop" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+    <div id="modalBox" class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden transform transition-all">
+      <!-- Dynamic modal inner content -->
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- TOAST NOTIFICATION CONTAINER                                          -->
+  <!-- ===================================================================== -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2.5 max-w-sm w-full pointer-events-none px-4 sm:px-0">
+    <!-- Toasts injected here -->
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- APPLICATION LOGIC (AUTH, RBAC, STATE, WORKFLOWS, RENDERERS)           -->
+  <!-- ===================================================================== -->
+  <script>
+    // =========================================================================
+    // 1. CONSTANTS, USER ACCOUNTS & INITIAL MOCK DATA
+    // =========================================================================
+    const STORAGE_KEY = 'agrifed_wms_thai_v2';
+
+    const USER_ACCOUNTS = [
+      {
+        id: 'admin',
+        username: 'admin',
+        password: '1234',
+        roleType: 'admin',
+        label: 'ผู้ดูแลคลังกลาง',
+        fullTitle: 'ผู้ดูแลคลังกลาง (Central Warehouse Admin)',
+        subtitle: 'บริหารสต็อกคลังกลาง อนุมัติจ่ายสินค้า และตรวจสอบสต็อกทั้ง 3 สาขา',
+        badgeText: 'Admin คลังกลาง'
+      },
+      {
+        id: 'branch1',
+        username: 'branch1',
+        password: '1234',
+        roleType: 'branch',
+        label: 'สาขา 1 (ในเมือง)',
+        fullTitle: 'สาขา 1 (สาขาในเมือง)',
+        subtitle: 'จัดการสต็อกหน้าร้าน บันทึกการขาย และส่งคำขอเบิกสินค้าจากคลังกลาง',
+        badgeText: 'สาขาย่อย 1'
+      },
+      {
+        id: 'branch2',
+        username: 'branch2',
+        password: '1234',
+        roleType: 'branch',
+        label: 'สาขา 2 (รอบเมือง)',
+        fullTitle: 'สาขา 2 (สาขารอบเมือง)',
+        subtitle: 'จัดการสต็อกหน้าร้าน บันทึกการขาย และส่งคำขอเบิกสินค้าจากคลังกลาง',
+        badgeText: 'สาขาย่อย 2'
+      },
+      {
+        id: 'branch3',
+        username: 'branch3',
+        password: '1234',
+        roleType: 'branch',
+        label: 'สาขา 3 (อำเภอ)',
+        fullTitle: 'สาขา 3 (สาขาอำเภอ)',
+        subtitle: 'จัดการสต็อกหน้าร้าน บันทึกการขาย และส่งคำขอเบิกสินค้าจากคลังกลาง',
+        badgeText: 'สาขาย่อย 3'
+      }
+    ];
+
+    /**
+     * สร้างข้อมูลเริ่มต้นตามโจทย์ที่กำหนด (สินค้า 6 รายการ + ใบเบิกจำลองสถานการณ์แบ่งจ่าย)
+     */
+    function createInitialState() {
+      const now = new Date();
+      const formatTimeOffset = (minsAgo) => {
+        const d = new Date(now.getTime() - minsAgo * 60000);
+        return d.toISOString();
+      };
+
+      return {
+        // สถานะการล็อคอิน: null = หน้า Login, หรือ 'admin' | 'branch1' | 'branch2' | 'branch3'
+        currentUser: null,
+        // แท็บที่เปิดอยู่ตามสิทธิ์ของผู้ใช้งาน
+        activeTab: 'approvals',
+        // ตัวเลือกสาขาในหน้า "ตรวจสอบสต็อกแต่ละสาขา" ของ Admin ('branch1' | 'branch2' | 'branch3' | 'compare')
+        inspectedBranchId: 'branch1',
+        // รายการสินค้าอาหารสัตว์มาตรฐาน 6 รายการ
+        products: [
+          {
+            id: 'P001',
+            sku: 'FD-DOG-20',
+            name: 'อาหารสุนัขโต รสเนื้อ 20 กก.',
+            category: 'อาหารสุนัข',
+            unit: 'กระสอบ',
+            minStock: 10,
+            stock: {
+              central: 50,
+              branch1: 8,
+              branch2: 14,
+              branch3: 6
+            }
+          },
+          {
+            id: 'P002',
+            sku: 'FD-CAT-10',
+            name: 'อาหารแมวโต ปลาทู 10 กก.',
+            category: 'อาหารแมว',
+            unit: 'กระสอบ',
+            minStock: 8,
+            stock: {
+              central: 12, // คลังกลางมี 12 กระสอบ ขณะที่สาขา 1 ขอ 10 และสาขา 2 ขอ 6
+              branch1: 2,
+              branch2: 3,
+              branch3: 5
+            }
+          },
+          {
+            id: 'P003',
+            sku: 'FD-PUP-15',
+            name: 'อาหารลูกสุนัข สูตรนมแพะ 15 กก.',
+            category: 'อาหารสุนัข',
+            unit: 'กระสอบ',
+            minStock: 6,
+            stock: {
+              central: 35,
+              branch1: 7,
+              branch2: 4,
+              branch3: 9
+            }
+          },
+          {
+            id: 'P004',
+            sku: 'FD-CHK-30',
+            name: 'อาหารไก่ไข่ ชนิดเม็ด 30 กก.',
+            category: 'อาหารสัตว์ปีก',
+            unit: 'กระสอบ',
+            minStock: 15,
+            stock: {
+              central: 80,
+              branch1: 18,
+              branch2: 22,
+              branch3: 12
+            }
+          },
+          {
+            id: 'P005',
+            sku: 'FD-PIG-30',
+            name: 'อาหารหมูขุน ระยะกลาง 30 กก.',
+            category: 'อาหารปศุสัตว์',
+            unit: 'กระสอบ',
+            minStock: 12,
+            stock: {
+              central: 45,
+              branch1: 6,
+              branch2: 15,
+              branch3: 0 // จำลองสินค้าหมดสต็อกที่สาขา 3
+            }
+          },
+          {
+            id: 'P006',
+            sku: 'LT-CAT-10',
+            name: 'ทรายแมวภูเขาไฟ 10 ลิตร',
+            category: 'อุปกรณ์สัตว์เลี้ยง',
+            unit: 'ถุง',
+            minStock: 8,
+            stock: {
+              central: 28,
+              branch1: 4,
+              branch2: 9,
+              branch3: 3
+            }
+          }
+        ],
+        // ใบคำขอเบิกรออนุมัติตั้งต้น
+        requisitions: [
+          {
+            id: 'REQ-2026-001',
+            branchId: 'branch1',
+            createdAt: formatTimeOffset(45),
+            processedAt: null,
+            status: 'pending', // 'pending' | 'approved_full' | 'approved_partial' | 'rejected'
+            branchNote: 'ลูกค้าประจำสั่งจองอาหารแมวปลาทูไว้ หน้าร้านเหลือแค่ 2 กระสอบครับ',
+            adminNote: '',
+            items: [
+              { productId: 'P002', requestedQty: 10, approvedQty: null },
+              { productId: 'P006', requestedQty: 6, approvedQty: null }
+            ]
+          },
+          {
+            id: 'REQ-2026-002',
+            branchId: 'branch2',
+            createdAt: formatTimeOffset(20),
+            processedAt: null,
+            status: 'pending',
+            branchNote: 'ขอเบิกอาหารแมวปลาทูกับอาหารลูกสุนัขเติมสต็อกช่วงสุดสัปดาห์ครับ',
+            adminNote: '',
+            items: [
+              { productId: 'P002', requestedQty: 6, approvedQty: null },
+              { productId: 'P003', requestedQty: 5, approvedQty: null }
+            ]
+          }
+        ],
+        // ประวัติการเคลื่อนไหวสต็อก (Audit Logs)
+        movements: [
+          {
+            id: 'MOV-1001',
+            timestamp: formatTimeOffset(180),
+            type: 'restock', // 'restock' | 'dispatch' | 'sale' | 'new_product'
+            locationId: 'central',
+            productId: 'P002',
+            qtyChange: 12,
+            detail: 'รับสินค้าเข้าคลังกลางเริ่มต้น (ล็อตประจำสัปดาห์จากโรงงาน)'
+          },
+          {
+            id: 'MOV-1002',
+            timestamp: formatTimeOffset(95),
+            type: 'sale',
+            locationId: 'branch1',
+            productId: 'P002',
+            qtyChange: -3,
+            detail: 'ขายหน้าร้าน สาขา 1 (ในเมือง) จำนวน 3 กระสอบ'
+          },
+          {
+            id: 'MOV-1003',
+            timestamp: formatTimeOffset(60),
+            type: 'sale',
+            locationId: 'branch3',
+            productId: 'P005',
+            qtyChange: -4,
+            detail: 'ขายหน้าร้าน สาขา 3 (อำเภอ) จำนวน 4 กระสอบ (สินค้าหมดหน้าร้าน)'
+          }
+        ],
+        // ฟอร์มสร้างใบเบิกชั่วคราวฝั่งสาขา
+        draftRequisition: {
+          note: '',
+          items: [
+            { productId: 'P001', qty: 5 }
+          ]
+        },
+        // ค่าตัวเลขจ่ายจริงชั่วคราวที่ Admin กรอกในแต่ละใบเบิก
+        approvalDrafts: {},
+        // ตัวกรองประวัติการเคลื่อนไหว (Audit Logs)
+        historyFilter: {
+          location: 'all',
+          type: 'all',
+          search: ''
+        }
+      };
+    }
+
+    // =========================================================================
+    // 2. STATE MANAGEMENT & LOCALSTORAGE PERSISTENCE
+    // =========================================================================
+    let appState = loadState();
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && Array.isArray(parsed.products) && Array.isArray(parsed.requisitions)) {
+            return {
+              ...createInitialState(),
+              ...parsed
+            };
+          }
+        }
+      } catch (err) {
+        console.error('ไม่สามารถโหลดข้อมูลจาก localStorage:', err);
+      }
+      return createInitialState();
+    }
+
+    function saveState() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+      } catch (err) {
+        console.error('ไม่สามารถบันทึกข้อมูลลง localStorage:', err);
+      }
+    }
+
+    // =========================================================================
+    // 3. HELPER FUNCTIONS
+    // =========================================================================
+    function getAccount(userId) {
+      return USER_ACCOUNTS.find(u => u.id === userId) || null;
+    }
+
+    function getBranchAccounts() {
+      return USER_ACCOUNTS.filter(u => u.roleType === 'branch');
+    }
+
+    function getProduct(productId) {
+      return appState.products.find(p => p.id === productId);
+    }
+
+    function formatThaiDateTime(isoString) {
+      if (!isoString) return '-';
+      const d = new Date(isoString);
+      return d.toLocaleDateString('th-TH', {
+        day: '2-digit',
+        month: 'short',
+        year: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      }) + ' น.';
+    }
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    /**
+     * คำนวณยอดขอเบิกที่กำลังรออนุมัติทั้งหมดของสินค้าแต่ละชนิด (ทั้งระบบ)
+     */
+    function getPendingDemandMap() {
+      const demand = {};
+      appState.products.forEach(p => {
+        demand[p.id] = 0;
+      });
+      appState.requisitions
+        .filter(r => r.status === 'pending')
+        .forEach(req => {
+          req.items.forEach(item => {
+            if (demand[item.productId] !== undefined) {
+              demand[item.productId] += Number(item.requestedQty) || 0;
+            }
+          });
+        });
+      return demand;
+    }
+
+    /**
+     * คำนวณยอดขอเบิกที่กำลังรออนุมัติเฉพาะของสาขาที่ระบุ
+     */
+    function getBranchPendingDemandMap(branchId) {
+      const demand = {};
+      appState.products.forEach(p => {
+        demand[p.id] = 0;
+      });
+      appState.requisitions
+        .filter(r => r.status === 'pending' && r.branchId === branchId)
+        .forEach(req => {
+          req.items.forEach(item => {
+            if (demand[item.productId] !== undefined) {
+              demand[item.productId] += Number(item.requestedQty) || 0;
+            }
+          });
+        });
+      return demand;
+    }
+
+    function generateNextReqId() {
+      const num = appState.requisitions.length + 1;
+      return `REQ-2026-${String(num).padStart(3, '0')}`;
+    }
+
+    // =========================================================================
+    // 4. TOAST & MODAL SYSTEM (แทน alert / confirm ทั้งหมด)
+    // =========================================================================
+    function showToast(title, message = '', type = 'success') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+
+      const styles = {
+        success: {
+          bg: 'bg-emerald-900 border-emerald-700 text-white',
+          iconBg: 'bg-emerald-500/20 text-emerald-300',
+          icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />`
+        },
+        warning: {
+          bg: 'bg-amber-900 border-amber-700 text-white',
+          iconBg: 'bg-amber-500/20 text-amber-300',
+          icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />`
+        },
+        error: {
+          bg: 'bg-rose-900 border-rose-700 text-white',
+          iconBg: 'bg-rose-500/20 text-rose-300',
+          icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />`
+        }
+      };
+
+      const st = styles[type] || styles.success;
+
+      toast.className = `pointer-events-auto flex items-start gap-3 p-3.5 rounded-xl border shadow-xl toast-enter ${st.bg}`;
+      toast.innerHTML = `
+        <div class="w-8 h-8 rounded-lg ${st.iconBg} flex items-center justify-center shrink-0 mt-0.5">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            ${st.icon}
+          </svg>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-semibold leading-snug">${escapeHtml(title)}</p>
+          ${message ? `<p class="text-xs opacity-90 mt-0.5 leading-relaxed">${escapeHtml(message)}</p>` : ''}
+        </div>
+      `;
+
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.classList.remove('toast-enter');
+        toast.classList.add('toast-exit');
+        setTimeout(() => toast.remove(), 260);
+      }, 3800);
+    }
+
+    function openModal(htmlContent) {
+      const backdrop = document.getElementById('modalBackdrop');
+      const box = document.getElementById('modalBox');
+      box.innerHTML = htmlContent;
+      backdrop.classList.remove('hidden');
+    }
+
+    function closeModal() {
+      const backdrop = document.getElementById('modalBackdrop');
+      backdrop.classList.add('hidden');
+    }
+
+    document.getElementById('modalBackdrop').addEventListener('click', (e) => {
+      if (e.target.id === 'modalBackdrop') {
+        closeModal();
+      }
+    });
+
+    function openResetModal() {
+      openModal(`
+        <div class="p-6">
+          <div class="flex items-center gap-3 text-rose-600 mb-3">
+            <div class="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center shrink-0">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-slate-900">ยืนยันการรีเซ็ตข้อมูลเริ่มต้น?</h3>
+          </div>
+          <p class="text-sm text-slate-600 leading-relaxed mb-6">
+            ข้อมูลสต็อกสินค้า ใบคำขอเบิก และประวัติการทำรายการทั้งหมดจะถูกรีเซ็ตกลับไปเป็นค่าเริ่มต้นสำหรับทดสอบระบบใหม่ คุณต้องการดำเนินการต่อหรือไม่?
+          </p>
+          <div class="flex items-center justify-end gap-2.5">
+            <button onclick="closeModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+              ยกเลิก
+            </button>
+            <button onclick="confirmResetData()" class="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 shadow-sm transition cursor-pointer">
+              ยืนยันรีเซ็ตข้อมูล
+            </button>
+          </div>
+        </div>
+      `);
+    }
+
+    function confirmResetData() {
+      const loggedInUser = appState.currentUser;
+      appState = createInitialState();
+      appState.currentUser = loggedInUser;
+      if (loggedInUser) {
+        const acc = getAccount(loggedInUser);
+        appState.activeTab = acc && acc.roleType === 'admin' ? 'approvals' : 'branch_stock';
+      }
+      saveState();
+      closeModal();
+      renderApp();
+      showToast('รีเซ็ตข้อมูลเรียบร้อยแล้ว', 'โหลดข้อมูลสินค้า 6 รายการและใบขอเบิกจำลองเริ่มต้นใหม่ทั้งหมด', 'success');
+    }
+
+    // =========================================================================
+    // 5. AUTHENTICATION & NAVIGATION ACTIONS
+    // =========================================================================
+    let loginErrorMessage = '';
+    let showLoginPassword = false;
+
+    function toggleLoginPasswordVisibility() {
+      showLoginPassword = !showLoginPassword;
+      const pwdInput = document.getElementById('loginPasswordInput');
+      if (pwdInput) {
+        pwdInput.type = showLoginPassword ? 'text' : 'password';
+      }
+    }
+
+    function handleLoginSubmit(event) {
+      if (event) event.preventDefault();
+      const username = (document.getElementById('loginUsernameInput')?.value || '').trim().toLowerCase();
+      const password = (document.getElementById('loginPasswordInput')?.value || '').trim();
+
+      const matched = USER_ACCOUNTS.find(
+        u => u.username.toLowerCase() === username && u.password === password
+      );
+
+      if (!matched) {
+        loginErrorMessage = 'ชื่อผู้ใช้งาน (Username) หรือรหัสผ่าน (Password) ไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง';
+        renderApp();
+        return;
+      }
+
+      loginWithAccount(matched.id);
+    }
+
+    function loginWithAccount(accountId) {
+      const account = getAccount(accountId);
+      if (!account) return;
+
+      loginErrorMessage = '';
+      appState.currentUser = account.id;
+      appState.activeTab = account.roleType === 'admin' ? 'approvals' : 'branch_stock';
+      saveState();
+      renderApp();
+      showToast(
+        `เข้าสู่ระบบสำเร็จ: ${account.fullTitle}`,
+        account.subtitle,
+        'success'
+      );
+    }
+
+    function logoutUser() {
+      const prevUser = getAccount(appState.currentUser);
+      appState.currentUser = null;
+      loginErrorMessage = '';
+      saveState();
+      renderApp();
+      showToast(
+        'ออกจากระบบเรียบร้อยแล้ว',
+        prevUser ? `ออกจากบัญชี ${prevUser.label} แล้ว` : '',
+        'success'
+      );
+    }
+
+    function switchTab(tabId) {
+      const account = getAccount(appState.currentUser);
+      if (!account) return;
+
+      // ป้องกันการเข้าถึงแท็บข้ามสิทธิ์ (RBAC Enforcement)
+      const adminAllowedTabs = ['approvals', 'inspector', 'central', 'history'];
+      const branchAllowedTabs = ['branch_stock', 'branch_requisition', 'branch_history'];
+
+      if (account.roleType === 'admin' && !adminAllowedTabs.includes(tabId)) {
+        tabId = 'approvals';
+      } else if (account.roleType === 'branch' && !branchAllowedTabs.includes(tabId)) {
+        tabId = 'branch_stock';
+      }
+
+      appState.activeTab = tabId;
+      saveState();
+      renderApp();
+    }
+
+    function selectInspectedBranch(targetId) {
+      appState.inspectedBranchId = targetId;
+      saveState();
+      renderApp();
+    }
+
+    // =========================================================================
+    // 6. ADMIN ACTIONS: APPROVE (FULL/PARTIAL), REJECT, RESTOCK, NEW PRODUCT
+    // =========================================================================
+    function initApprovalDraft(req) {
+      if (!appState.approvalDrafts[req.id]) {
+        const itemsMap = {};
+        req.items.forEach(item => {
+          const prod = getProduct(item.productId);
+          const available = prod ? prod.stock.central : 0;
+          // ค่าเริ่มต้นที่แนะนำ: จ่ายตามที่ขอ แต่ไม่เกินสต็อกคลังกลางที่มี
+          itemsMap[item.productId] = Math.min(item.requestedQty, available);
+        });
+        appState.approvalDrafts[req.id] = {
+          items: itemsMap,
+          adminNote: ''
+        };
+      }
+      return appState.approvalDrafts[req.id];
+    }
+
+    function updateApprovalQty(reqId, productId, rawValue) {
+      if (appState.currentUser !== 'admin') return;
+      const req = appState.requisitions.find(r => r.id === reqId);
+      const prod = getProduct(productId);
+      if (!req || !prod) return;
+
+      const draft = initApprovalDraft(req);
+      let val = parseInt(rawValue, 10);
+      if (isNaN(val) || val < 0) val = 0;
+
+      if (val > prod.stock.central) {
+        val = prod.stock.central;
+        showToast(
+          'จำกัดตามสต็อกคลังกลางคงเหลือ',
+          `${prod.name} มีในคลังกลางเพียง ${prod.stock.central} ${prod.unit}`,
+          'warning'
+        );
+      }
+
+      draft.items[productId] = val;
+      renderApp();
+    }
+
+    function updateApprovalNote(reqId, noteValue) {
+      if (appState.currentUser !== 'admin') return;
+      const req = appState.requisitions.find(r => r.id === reqId);
+      if (!req) return;
+      const draft = initApprovalDraft(req);
+      draft.adminNote = noteValue;
+    }
+
+    function approveRequisition(reqId) {
+      if (appState.currentUser !== 'admin') return;
+      const req = appState.requisitions.find(r => r.id === reqId);
+      if (!req || req.status !== 'pending') return;
+
+      const draft = initApprovalDraft(req);
+      const branchAcc = getAccount(req.branchId);
+
+      let totalApprovedUnits = 0;
+      let isPartial = false;
+
+      for (const item of req.items) {
+        const prod = getProduct(item.productId);
+        const approvedQty = Number(draft.items[item.productId] ?? 0);
+
+        if (!prod) continue;
+        if (approvedQty < 0 || approvedQty > prod.stock.central) {
+          showToast(
+            'ไม่สามารถอนุมัติได้',
+            `จำนวนจ่ายจริงของ "${prod.name}" (${approvedQty}) เกินสต็อกคลังกลางที่มี (${prod.stock.central})`,
+            'error'
+          );
+          return;
+        }
+        totalApprovedUnits += approvedQty;
+        if (approvedQty < item.requestedQty) {
+          isPartial = true;
+        }
+      }
+
+      if (totalApprovedUnits === 0) {
+        showToast(
+          'กรุณาระบุจำนวนจ่ายอย่างน้อย 1 รายการ',
+          'หากไม่ต้องการจ่ายสินค้าเลย กรุณากดปุ่ม "ปฏิเสธคำขอ"',
+          'warning'
+        );
+        return;
+      }
+
+      const nowIso = new Date().toISOString();
+      const summaryParts = [];
+
+      req.items.forEach(item => {
+        const prod = getProduct(item.productId);
+        const approvedQty = Number(draft.items[item.productId] ?? 0);
+        item.approvedQty = approvedQty;
+
+        if (prod && approvedQty > 0) {
+          prod.stock.central -= approvedQty;
+          prod.stock[req.branchId] = (prod.stock[req.branchId] || 0) + approvedQty;
+
+          appState.movements.unshift({
+            id: `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            timestamp: nowIso,
+            type: 'dispatch',
+            locationId: req.branchId,
+            productId: prod.id,
+            qtyChange: approvedQty,
+            detail: `อนุมัติใบเบิก ${req.id} ให้ ${branchAcc.label} | ขอเบิก ${item.requestedQty} → จ่ายจริง ${approvedQty} ${prod.unit} (คลังกลาง -${approvedQty}, ${branchAcc.label} +${approvedQty})`
+          });
+
+          summaryParts.push(`${prod.name}: ขอ ${item.requestedQty} จ่าย ${approvedQty}`);
+        } else if (prod && approvedQty === 0) {
+          appState.movements.unshift({
+            id: `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            timestamp: nowIso,
+            type: 'dispatch',
+            locationId: req.branchId,
+            productId: prod.id,
+            qtyChange: 0,
+            detail: `ใบเบิก ${req.id} (${branchAcc.label}) | ขอเบิก ${item.requestedQty} → งดจ่ายรายการนี้ (0 ${prod.unit})`
+          });
+        }
+      });
+
+      req.status = isPartial ? 'approved_partial' : 'approved_full';
+      req.processedAt = nowIso;
+      req.adminNote = (draft.adminNote || '').trim() || (
+        isPartial
+          ? 'อนุมัติจ่ายบางส่วนเพื่อสำรองสต็อกแบ่งกระจายให้สาขาอื่นด้วย'
+          : 'อนุมัติจ่ายสินค้าครบตามจำนวนที่ขอเบิก'
+      );
+
+      delete appState.approvalDrafts[req.id];
+      saveState();
+      renderApp();
+
+      showToast(
+        isPartial
+          ? `อนุมัติใบเบิก ${req.id} (อนุมัติบางส่วน) สำเร็จ`
+          : `อนุมัติใบเบิก ${req.id} (อนุมัติครบ) สำเร็จ`,
+        `ตัดสต็อกคลังกลางและโอนเข้า ${branchAcc.label} เรียบร้อย (${summaryParts.join(', ')})`,
+        'success'
+      );
+    }
+
+    function openRejectModal(reqId) {
+      if (appState.currentUser !== 'admin') return;
+      const req = appState.requisitions.find(r => r.id === reqId);
+      if (!req) return;
+      const branchAcc = getAccount(req.branchId);
+
+      openModal(`
+        <div class="p-6">
+          <div class="flex items-center gap-3 text-rose-600 mb-3">
+            <div class="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center shrink-0">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </div>
+            <div>
+              <h3 class="text-lg font-bold text-slate-900">ปฏิเสธใบคำขอเบิก ${escapeHtml(req.id)}</h3>
+              <p class="text-xs text-slate-500">จาก ${escapeHtml(branchAcc.fullTitle)}</p>
+            </div>
+          </div>
+          <label class="block text-sm font-medium text-slate-700 mb-1.5">ระบุเหตุผลที่ปฏิเสธคำขอ</label>
+          <input
+            type="text"
+            id="rejectReasonInput"
+            placeholder="เช่น สินค้าอยู่ระหว่างรอรถขนส่งเข้าคลังกลาง กรุณาส่งเบิกใหม่วันพรุ่งนี้"
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none mb-5"
+          />
+          <div class="flex items-center justify-end gap-2.5">
+            <button onclick="closeModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+              ยกเลิก
+            </button>
+            <button onclick="confirmRejectRequisition('${escapeHtml(req.id)}')" class="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 shadow-sm transition cursor-pointer">
+              ยืนยันปฏิเสธคำขอ
+            </button>
+          </div>
+        </div>
+      `);
+    }
+
+    function confirmRejectRequisition(reqId) {
+      if (appState.currentUser !== 'admin') return;
+      const req = appState.requisitions.find(r => r.id === reqId);
+      if (!req || req.status !== 'pending') return;
+
+      const reason = document.getElementById('rejectReasonInput')?.value.trim() || 'คลังกลางปฏิเสธคำขอเบิกชั่วคราว';
+      req.status = 'rejected';
+      req.processedAt = new Date().toISOString();
+      req.adminNote = reason;
+      req.items.forEach(item => { item.approvedQty = 0; });
+
+      delete appState.approvalDrafts[req.id];
+      saveState();
+      closeModal();
+      renderApp();
+      showToast(`ปฏิเสธใบเบิก ${req.id} แล้ว`, `เหตุผล: ${reason}`, 'warning');
+    }
+
+    function openRestockModal(preselectedProductId = '') {
+      if (appState.currentUser !== 'admin') return;
+      const optionsHtml = appState.products.map(p => `
+        <option value="${p.id}" ${p.id === preselectedProductId ? 'selected' : ''}>
+          ${escapeHtml(p.name)} (คงเหลือคลังกลาง: ${p.stock.central} ${escapeHtml(p.unit)})
+        </option>
+      `).join('');
+
+      openModal(`
+        <div class="p-6">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+              </div>
+              <div>
+                <h3 class="text-lg font-bold text-slate-900">รับสินค้าเข้าคลังกลาง (+ Restock)</h3>
+                <p class="text-xs text-slate-500">เพิ่มจำนวนสต็อกสินค้าเข้าสู่คลังกลาง</p>
+              </div>
+            </div>
+            <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-1">เลือกสินค้าอาหารสัตว์</label>
+              <select id="restockProductSelect" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none">
+                ${optionsHtml}
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-1">จำนวนที่รับเข้าคลังกลาง</label>
+              <input
+                type="number"
+                id="restockQtyInput"
+                min="1"
+                value="20"
+                class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-semibold focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-1">หมายเหตุ / เลขที่ใบส่งของจากโรงงาน</label>
+              <input
+                type="text"
+                id="restockNoteInput"
+                placeholder="เช่น รับเข้าจากโรงงานผลิตอาหารสัตว์ ล็อต #B-2026"
+                class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+              />
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end gap-2.5 mt-6 pt-4 border-t border-slate-100">
+            <button onclick="closeModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+              ยกเลิก
+            </button>
+            <button onclick="submitRestock()" class="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition cursor-pointer">
+              บันทึกรับเข้าสต็อก
+            </button>
+          </div>
+        </div>
+      `);
+    }
+
+    function submitRestock() {
+      if (appState.currentUser !== 'admin') return;
+      const productId = document.getElementById('restockProductSelect')?.value;
+      const qty = parseInt(document.getElementById('restockQtyInput')?.value, 10);
+      const note = document.getElementById('restockNoteInput')?.value.trim();
+
+      const prod = getProduct(productId);
+      if (!prod || isNaN(qty) || qty <= 0) {
+        showToast('ข้อมูลไม่ถูกต้อง', 'กรุณาระบุจำนวนรับเข้ามากกว่า 0', 'error');
+        return;
+      }
+
+      prod.stock.central += qty;
+      appState.movements.unshift({
+        id: `MOV-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        type: 'restock',
+        locationId: 'central',
+        productId: prod.id,
+        qtyChange: qty,
+        detail: `รับเข้าคลังกลาง +${qty} ${prod.unit}${note ? ` (${note})` : ''}`
+      });
+
+      saveState();
+      closeModal();
+      renderApp();
+      showToast(
+        'รับสินค้าเข้าคลังกลางสำเร็จ',
+        `เพิ่ม "${prod.name}" จำนวน +${qty} ${prod.unit} (รวมในคลังกลาง: ${prod.stock.central} ${prod.unit})`,
+        'success'
+      );
+    }
+
+    function openNewProductModal() {
+      if (appState.currentUser !== 'admin') return;
+      openModal(`
+        <div class="p-6">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+              </div>
+              <div>
+                <h3 class="text-lg font-bold text-slate-900">เพิ่มรายการสินค้าอาหารสัตว์ใหม่</h3>
+                <p class="text-xs text-slate-500">สินค้าใหม่จะปรากฏในระบบทั้งคลังกลางและ 3 สาขาย่อยทันที</p>
+              </div>
+            </div>
+            <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-1">ชื่อสินค้าและขนาดบรรจุ <span class="text-rose-500">*</span></label>
+              <input
+                type="text"
+                id="newProdName"
+                placeholder="เช่น อาหารเป็ดเนื้อระยะรุ่น 30 กก."
+                class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+              />
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">หมวดหมู่</label>
+                <select id="newProdCategory" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm bg-white focus:ring-2 focus:ring-emerald-500 outline-none">
+                  <option value="อาหารสุนัข">อาหารสุนัข</option>
+                  <option value="อาหารแมว">อาหารแมว</option>
+                  <option value="อาหารสัตว์ปีก">อาหารสัตว์ปีก</option>
+                  <option value="อาหารปศุสัตว์">อาหารปศุสัตว์</option>
+                  <option value="อุปกรณ์สัตว์เลี้ยง">อุปกรณ์สัตว์เลี้ยง</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">หน่วยนับ</label>
+                <input
+                  type="text"
+                  id="newProdUnit"
+                  value="กระสอบ"
+                  placeholder="กระสอบ / ถุง / กล่อง"
+                  class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">สต็อกเริ่มต้นในคลังกลาง</label>
+                <input
+                  type="number"
+                  id="newProdCentralStock"
+                  min="0"
+                  value="30"
+                  class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-semibold focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">จุดสั่งซื้อขั้นต่ำ (Min Stock)</label>
+                <input
+                  type="number"
+                  id="newProdMinStock"
+                  min="1"
+                  value="8"
+                  class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-semibold focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+            </div>
+            <p class="text-xs text-slate-500">* สต็อกเริ่มต้นของสาขา 1, 2, 3 จะเป็น 0 (สาขาสามารถกดสร้างใบขอเบิกได้ทันที)</p>
+          </div>
+
+          <div class="flex items-center justify-end gap-2.5 mt-6 pt-4 border-t border-slate-100">
+            <button onclick="closeModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer">
+              ยกเลิก
+            </button>
+            <button onclick="submitNewProduct()" class="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition cursor-pointer">
+              เพิ่มสินค้าใหม่
+            </button>
+          </div>
+        </div>
+      `);
+    }
+
+    function submitNewProduct() {
+      if (appState.currentUser !== 'admin') return;
+      const name = document.getElementById('newProdName')?.value.trim();
+      const category = document.getElementById('newProdCategory')?.value || 'อาหารปศุสัตว์';
+      const unit = document.getElementById('newProdUnit')?.value.trim() || 'กระสอบ';
+      const centralStock = Math.max(0, parseInt(document.getElementById('newProdCentralStock')?.value, 10) || 0);
+      const minStock = Math.max(1, parseInt(document.getElementById('newProdMinStock')?.value, 10) || 5);
+
+      if (!name) {
+        showToast('กรุณากรอกชื่อสินค้า', 'ชื่อสินค้าและขนาดบรรจุห้ามเว้นว่าง', 'error');
+        return;
+      }
+
+      const nextNum = appState.products.length + 1;
+      const newId = `P${String(nextNum).padStart(3, '0')}`;
+      const newSku = `FD-NEW-${String(nextNum).padStart(2, '0')}`;
+
+      appState.products.push({
+        id: newId,
+        sku: newSku,
+        name,
+        category,
+        unit,
+        minStock,
+        stock: {
+          central: centralStock,
+          branch1: 0,
+          branch2: 0,
+          branch3: 0
+        }
+      });
+
+      appState.movements.unshift({
+        id: `MOV-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        type: 'new_product',
+        locationId: 'central',
+        productId: newId,
+        qtyChange: centralStock,
+        detail: `เพิ่มรายการสินค้าใหม่ "${name}" เข้าสู่ระบบ (สต็อกคลังกลางเริ่มต้น ${centralStock} ${unit})`
+      });
+
+      saveState();
+      closeModal();
+      renderApp();
+      showToast('เพิ่มสินค้าใหม่สำเร็จ', `เพิ่ม "${name}" เข้าระบบเรียบร้อยแล้ว`, 'success');
+    }
+
+    // =========================================================================
+    // 7. BRANCH ACTIONS: POS SALE (-1 / -5) & CREATE REQUISITION
+    // =========================================================================
+    function simulateBranchSale(productId, qty = 1) {
+      const account = getAccount(appState.currentUser);
+      if (!account || account.roleType !== 'branch') return;
+
+      const branchId = account.id;
+      const prod = getProduct(productId);
+      if (!prod) return;
+
+      const currentStock = prod.stock[branchId] || 0;
+      if (currentStock < qty) {
+        showToast(
+          'สต็อกหน้าร้านไม่เพียงพอ',
+          `${prod.name} คงเหลือเพียง ${currentStock} ${prod.unit} (ไม่พอขาย ${qty} ${prod.unit})`,
+          'error'
+        );
+        return;
+      }
+
+      prod.stock[branchId] = currentStock - qty;
+      appState.movements.unshift({
+        id: `MOV-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        type: 'sale',
+        locationId: branchId,
+        productId: prod.id,
+        qtyChange: -qty,
+        detail: `ขายหน้าร้าน ${account.label} จำนวน ${qty} ${prod.unit} (คงเหลือหน้าร้าน ${prod.stock[branchId]} ${prod.unit})`
+      });
+
+      saveState();
+      renderApp();
+
+      const remaining = prod.stock[branchId];
+      if (remaining <= prod.minStock) {
+        showToast(
+          `ขายสินค้าสำเร็จ -${qty} ${prod.unit} (คงเหลือ ${remaining})`,
+          `แจ้งเตือน: "${prod.name}" ต่ำกว่าจุดสั่งซื้อขั้นต่ำ (${prod.minStock}) แนะนำให้สร้างใบขอเบิก`,
+          'warning'
+        );
+      } else {
+        showToast(
+          `บันทึกขายหน้าร้าน -${qty} ${prod.unit}`,
+          `${prod.name} คงเหลือหน้าร้าน ${remaining} ${prod.unit}`,
+          'success'
+        );
+      }
+    }
+
+    function quickRequestProduct(productId) {
+      const account = getAccount(appState.currentUser);
+      if (!account || account.roleType !== 'branch') return;
+
+      appState.draftRequisition = {
+        note: 'สต็อกหน้าร้านใกล้หมด ขอเบิกเติมสต็อกครับ',
+        items: [{ productId, qty: 10 }]
+      };
+      appState.activeTab = 'branch_requisition';
+      saveState();
+      renderApp();
+    }
+
+    function addDraftRequisitionRow() {
+      const usedIds = new Set(appState.draftRequisition.items.map(i => i.productId));
+      const nextProd = appState.products.find(p => !usedIds.has(p.id)) || appState.products[0];
+      appState.draftRequisition.items.push({
+        productId: nextProd.id,
+        qty: 5
+      });
+      saveState();
+      renderApp();
+    }
+
+    function removeDraftRequisitionRow(index) {
+      if (appState.draftRequisition.items.length <= 1) {
+        showToast('ต้องมีอย่างน้อย 1 รายการ', 'ใบคำขอเบิกสินค้าต้องมีรายการสินค้าอย่างน้อย 1 รายการ', 'warning');
+        return;
+      }
+      appState.draftRequisition.items.splice(index, 1);
+      saveState();
+      renderApp();
+    }
+
+    function updateDraftRequisitionRow(index, field, value) {
+      const row = appState.draftRequisition.items[index];
+      if (!row) return;
+      if (field === 'productId') {
+        row.productId = value;
+      } else if (field === 'qty') {
+        const parsed = parseInt(value, 10);
+        row.qty = isNaN(parsed) || parsed < 1 ? 1 : parsed;
+      }
+      saveState();
+      renderApp();
+    }
+
+    function updateDraftRequisitionNote(value) {
+      appState.draftRequisition.note = value;
+      saveState();
+    }
+
+    function submitRequisition() {
+      const account = getAccount(appState.currentUser);
+      if (!account || account.roleType !== 'branch') return;
+
+      const branchId = account.id;
+      const rawItems = appState.draftRequisition.items;
+
+      if (!rawItems || rawItems.length === 0) {
+        showToast('กรุณาเพิ่มรายการสินค้า', 'ต้องมีสินค้าอย่างน้อย 1 รายการในใบเบิก', 'error');
+        return;
+      }
+
+      const mergedMap = new Map();
+      for (const item of rawItems) {
+        const qty = parseInt(item.qty, 10);
+        if (isNaN(qty) || qty <= 0) {
+          showToast('จำนวนขอเบิกไม่ถูกต้อง', 'กรุณาระบุจำนวนขอเบิกมากกว่า 0', 'error');
+          return;
+        }
+        mergedMap.set(item.productId, (mergedMap.get(item.productId) || 0) + qty);
+      }
+
+      const finalItems = Array.from(mergedMap.entries()).map(([productId, requestedQty]) => ({
+        productId,
+        requestedQty,
+        approvedQty: null
+      }));
+
+      const newReqId = generateNextReqId();
+      const newReq = {
+        id: newReqId,
+        branchId,
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        status: 'pending',
+        branchNote: appState.draftRequisition.note.trim() || 'ขอเบิกสินค้าเติมสต็อกหน้าร้าน',
+        adminNote: '',
+        items: finalItems
+      };
+
+      appState.requisitions.unshift(newReq);
+
+      appState.draftRequisition = {
+        note: '',
+        items: [{ productId: appState.products[0].id, qty: 5 }]
+      };
+      appState.activeTab = 'branch_history';
+
+      saveState();
+      renderApp();
+      showToast(
+        `ส่งใบคำขอเบิก ${newReqId} สำเร็จ!`,
+        `ส่งคำขอเบิก ${finalItems.length} รายการจาก ${account.label} ไปยังคลังกลางเพื่อรออนุมัติแล้ว`,
+        'success'
+      );
+    }
+
+    // =========================================================================
+    // 8. LOGIN SCREEN RENDERER (AUTHENTICATION + DEMO QUICK LOGIN)
+    // =========================================================================
+    function renderLoginScreen() {
+      const quickCardsHtml = USER_ACCOUNTS.map(acc => {
+        const isAdmin = acc.roleType === 'admin';
+        return `
+          <button
+            type="button"
+            onclick="loginWithAccount('${acc.id}')"
+            class="group text-left p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+              isAdmin
+                ? 'bg-amber-50/80 hover:bg-amber-100/90 border-amber-300 hover:border-amber-400'
+                : 'bg-slate-50 hover:bg-emerald-50/90 border-slate-200 hover:border-emerald-400'
+            }"
+          >
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold text-sm ${
+                isAdmin
+                  ? 'bg-amber-500 text-emerald-950 shadow-xs'
+                  : 'bg-emerald-700 text-white shadow-xs'
+              }">
+                ${isAdmin ? 'ADM' : acc.id.replace('branch', 'B')}
+              </div>
+              <div class="min-w-0">
+                <div class="font-bold text-sm text-slate-900 truncate">${escapeHtml(acc.label)}</div>
+                <div class="text-[11px] font-mono text-slate-500 mt-0.5">
+                  User: <strong class="text-slate-700">${escapeHtml(acc.username)}</strong> | Pass: <strong class="text-slate-700">1234</strong>
+                </div>
+              </div>
+            </div>
+            <span class="px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 transition ${
+              isAdmin
+                ? 'bg-amber-500/20 text-amber-900 group-hover:bg-amber-500 group-hover:text-emerald-950'
+                : 'bg-emerald-600/10 text-emerald-800 group-hover:bg-emerald-700 group-hover:text-white'
+            }">
+              เข้าสู่ระบบ →
+            </span>
+          </button>
+        `;
+      }).join('');
+
+      return `
+        <div class="min-h-screen flex flex-col justify-center items-center bg-gradient-to-br from-emerald-950 via-emerald-900 to-slate-900 p-4 sm:p-6">
+          <div class="max-w-4xl w-full grid grid-cols-1 lg:grid-cols-12 bg-white rounded-3xl shadow-2xl overflow-hidden border border-emerald-800/30">
+            
+            <!-- Left Branding & System Info Panel -->
+            <div class="lg:col-span-5 bg-emerald-900 text-white p-7 sm:p-8 flex flex-col justify-between relative overflow-hidden">
+              <div class="relative z-10">
+                <div class="w-14 h-14 rounded-2xl bg-amber-500 text-emerald-950 flex items-center justify-center shadow-lg mb-5">
+                  <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 21h18M3 10l9-7 9 7v11H3V10z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 21v-6a2 2 0 012-2h2a2 2 0 012 2v6" />
+                  </svg>
+                </div>
+                <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-400/30 mb-3">
+                  AgriFeed WMS • Multi-Branch
+                </span>
+                <h1 class="text-2xl sm:text-3xl font-bold leading-snug tracking-tight">
+                  ระบบจัดการคลังสินค้าอาหารสัตว์
+                </h1>
+                <p class="text-sm text-emerald-200 mt-3 leading-relaxed">
+                  ศูนย์กระจายสินค้าคลังกลางและเครือข่ายร้านค้าย่อยทั้ง 3 สาขา รองรับการขอเบิกสินค้า การอนุมัติแบ่งจ่าย (Partial Fulfillment) และการตรวจสอบสต็อกรายสาขาแบบเรียลไทม์
+                </p>
+              </div>
+
+              <div class="relative z-10 mt-8 pt-6 border-t border-emerald-800/80 space-y-2.5 text-xs text-emerald-200">
+                <div class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                  <span><strong>Admin คลังกลาง:</strong> อนุมัติแบ่งจ่าย &amp; ตรวจสอบสต็อกทุกสาขา</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  <span><strong>User สาขา 1–3:</strong> จัดการหน้าร้าน ขายสินค้า &amp; ส่งใบเบิก</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Login Form & Demo Quick Login Panel -->
+            <div class="lg:col-span-7 p-7 sm:p-9 flex flex-col justify-between bg-white">
+              <div>
+                <div class="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 class="text-xl sm:text-2xl font-bold text-slate-900">เข้าสู่ระบบ (Sign In)</h2>
+                    <p class="text-xs sm:text-sm text-slate-500 mt-0.5">กรอกชื่อผู้ใช้งานและรหัสผ่าน หรือเลือกเข้าสู่ระบบด่วนด้านล่าง</p>
+                  </div>
+                  <button
+                    type="button"
+                    onclick="openResetModal()"
+                    title="รีเซ็ตข้อมูลทดสอบเริ่มต้น"
+                    class="px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer"
+                  >
+                    รีเซ็ตข้อมูล
+                  </button>
+                </div>
+
+                ${loginErrorMessage ? `
+                  <div class="mb-4 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs sm:text-sm flex items-center gap-2.5">
+                    <svg class="w-5 h-5 shrink-0 text-rose-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>${escapeHtml(loginErrorMessage)}</span>
+                  </div>
+                ` : ''}
+
+                <!-- Standard Login Form -->
+                <form onsubmit="handleLoginSubmit(event)" class="space-y-4">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">ชื่อผู้ใช้งาน (Username)</label>
+                    <input
+                      type="text"
+                      id="loginUsernameInput"
+                      placeholder="เช่น admin, branch1, branch2, branch3"
+                      autocomplete="username"
+                      required
+                      class="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 outline-none transition"
+                    />
+                  </div>
+
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">รหัสผ่าน (Password)</label>
+                    <div class="relative">
+                      <input
+                        type="${showLoginPassword ? 'text' : 'password'}"
+                        id="loginPasswordInput"
+                        placeholder="กรอกรหัสผ่าน (1234)"
+                        autocomplete="current-password"
+                        required
+                        class="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 outline-none transition pr-12"
+                      />
+                      <button
+                        type="button"
+                        onclick="toggleLoginPasswordVisibility()"
+                        class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                        title="แสดง/ซ่อนรหัสผ่าน"
+                      >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    class="w-full py-3 rounded-xl text-sm font-bold bg-emerald-700 hover:bg-emerald-800 text-white shadow-md transition cursor-pointer"
+                  >
+                    เข้าสู่ระบบ
+                  </button>
+                </form>
+              </div>
+
+              <!-- Demo Quick Login Section -->
+              <div class="mt-7 pt-6 border-t border-slate-200">
+                <div class="flex items-center justify-between mb-3">
+                  <span class="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    <span>เข้าสู่ระบบด่วน (Demo Quick Login)</span>
+                  </span>
+                  <span class="text-[11px] text-slate-400">คลิกเดียวเพื่อสลับทดสอบสิทธิ์</span>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  ${quickCardsHtml}
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // 9. AUTHENTICATED HEADER, BANNER & NAVIGATION TABS
+    // =========================================================================
+    function renderAuthenticatedShell(account, contentHtml) {
+      const isAdmin = account.roleType === 'admin';
+      const pendingCount = appState.requisitions.filter(r => r.status === 'pending').length;
+      const myPendingCount = !isAdmin
+        ? appState.requisitions.filter(r => r.branchId === account.id && r.status === 'pending').length
+        : 0;
+
+      // Define tabs strictly based on RBAC
+      const tabs = isAdmin
+        ? [
+            {
+              id: 'approvals',
+              label: 'คำขอเบิกสินค้า (รออนุมัติ)',
+              badge: pendingCount,
+              icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />`
+            },
+            {
+              id: 'inspector',
+              label: 'ตรวจสอบสต็อกแต่ละสาขา',
+              icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />`
+            },
+            {
+              id: 'central',
+              label: 'คลังกลาง & เติมสต็อก',
+              icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />`
+            },
+            {
+              id: 'history',
+              label: 'ประวัติการเคลื่อนไหวสต็อก',
+              icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />`
+            }
+          ]
+        : [
+            {
+              id: 'branch_stock',
+              label: 'สต็อกหน้าร้าน & บันทึกการขาย',
+              icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />`
+            },
+            {
+              id: 'branch_requisition',
+              label: 'สร้างใบขอเบิกสินค้าจากคลังกลาง',
+              icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />`
+            },
+            {
+              id: 'branch_history',
+              label: 'ประวัติใบขอเบิกของสาขา',
+              badge: myPendingCount,
+              icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />`
+            }
+          ];
+
+      const navHtml = tabs.map(t => {
+        const active = appState.activeTab === t.id;
+        const badgeHtml = t.badge > 0
+          ? `<span class="ml-1.5 px-2 py-0.5 text-xs font-bold rounded-full ${active ? 'bg-white text-emerald-800' : 'bg-amber-500 text-white'}">${t.badge}</span>`
+          : '';
+
+        return `
+          <button
+            onclick="switchTab('${t.id}')"
+            class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition cursor-pointer ${
+              active
+                ? 'bg-emerald-700 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200/80 hover:text-slate-900'
+            }"
+          >
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              ${t.icon}
+            </svg>
+            <span>${escapeHtml(t.label)}</span>
+            ${badgeHtml}
+          </button>
+        `;
+      }).join('');
+
+      return `
+        <!-- Top Sticky Navbar -->
+        <header class="sticky top-0 z-40 bg-emerald-900 text-white shadow-lg border-b border-emerald-800">
+          <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between py-3 gap-3">
+              
+              <!-- Logo & System Name -->
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-amber-500 text-emerald-950 flex items-center justify-center shadow-inner shrink-0">
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 21h18M3 10l9-7 9 7v11H3V10z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 21v-6a2 2 0 012-2h2a2 2 0 012 2v6" />
+                  </svg>
+                </div>
+                <div>
+                  <div class="flex items-center gap-2">
+                    <h1 class="text-base sm:text-lg font-bold tracking-tight text-white">AgriFeed WMS</h1>
+                    <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                      isAdmin
+                        ? 'bg-amber-500 text-emerald-950'
+                        : 'bg-emerald-700 text-emerald-100 border border-emerald-600'
+                    }">
+                      ${escapeHtml(account.badgeText)}
+                    </span>
+                  </div>
+                  <p class="text-xs text-emerald-200">ระบบจัดการคลังสินค้าอาหารสัตว์และสัตว์เลี้ยง</p>
+                </div>
+              </div>
+
+              <!-- Logged-in User Info & Logout Controls -->
+              <div class="flex flex-wrap items-center gap-2">
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-950/60 border border-emerald-800 text-xs">
+                  <span class="w-2 h-2 rounded-full ${isAdmin ? 'bg-amber-400' : 'bg-emerald-400'}"></span>
+                  <span class="text-emerald-200">ผู้ใช้งาน:</span>
+                  <strong class="text-white">${escapeHtml(account.label)}</strong>
+                  <span class="font-mono text-emerald-400">(${escapeHtml(account.username)})</span>
+                </div>
+
+                <button
+                  onclick="openResetModal()"
+                  title="รีเซ็ตข้อมูลเริ่มต้น"
+                  class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-emerald-800/90 hover:bg-emerald-700 text-emerald-100 border border-emerald-700 transition cursor-pointer"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span class="hidden md:inline">รีเซ็ตข้อมูล</span>
+                </button>
+
+                <button
+                  onclick="logoutUser()"
+                  class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-sm transition cursor-pointer"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                  <span>ออกจากระบบ</span>
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </header>
+
+        <!-- Active Role Banner & Navigation Tabs -->
+        <div class="bg-white border-b border-slate-200 shadow-2xs">
+          <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div class="flex items-center gap-3.5">
+                <div class="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+                  isAdmin
+                    ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                    : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                }">
+                  ${isAdmin
+                    ? `<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>`
+                    : `<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>`
+                  }
+                </div>
+                <div>
+                  <h2 class="text-base sm:text-lg font-bold text-slate-900">${escapeHtml(account.fullTitle)}</h2>
+                  <p class="text-xs text-slate-500">${escapeHtml(account.subtitle)}</p>
+                </div>
+              </div>
+
+              <nav class="flex flex-wrap items-center gap-2">
+                ${navHtml}
+              </nav>
+            </div>
+          </div>
+        </div>
+
+        <!-- Main Workspace Content -->
+        <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          ${contentHtml}
+        </main>
+
+        <!-- Footer -->
+        <footer class="bg-white border-t border-slate-200 py-4 mt-10">
+          <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
+            <p>ระบบบริหารจัดการคลังสินค้าอาหารสัตว์และสัตว์เลี้ยง (AgriFeed Inventory Management)</p>
+            <p class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+              <span>บันทึกข้อมูลอัตโนมัติในเบราว์เซอร์ (LocalStorage)</span>
+            </p>
+          </div>
+        </footer>
+      `;
+    }
+
+    // =========================================================================
+    // 10. ADMIN TAB 1: REQUISITION APPROVALS (PARTIAL FULFILLMENT)
+    // =========================================================================
+    function renderAdminApprovals() {
+      const pendingReqs = appState.requisitions.filter(r => r.status === 'pending');
+      const processedReqs = appState.requisitions.filter(r => r.status !== 'pending');
+      const demandMap = getPendingDemandMap();
+
+      const pendingCardsHtml = pendingReqs.length === 0
+        ? `
+          <div class="bg-white rounded-2xl border border-slate-200 p-10 text-center">
+            <div class="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-3">
+              <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h4 class="text-base font-bold text-slate-900">ไม่มีใบคำขอเบิกที่รออนุมัติในขณะนี้</h4>
+            <p class="text-xs sm:text-sm text-slate-500 mt-1">คุณสามารถกด "ออกจากระบบ" แล้วเข้าสู่ระบบด้วยบัญชี <strong>branch1</strong>, <strong>branch2</strong> หรือ <strong>branch3</strong> เพื่อสร้างใบเบิกใหม่ได้</p>
+          </div>
+        `
+        : pendingReqs.map(req => {
+            const draft = initApprovalDraft(req);
+            const branchAcc = getAccount(req.branchId);
+
+            const itemRowsHtml = req.items.map(item => {
+              const prod = getProduct(item.productId);
+              if (!prod) return '';
+
+              const centralAvail = prod.stock.central;
+              const branchCurrent = prod.stock[req.branchId] || 0;
+              const approvedQty = Number(draft.items[item.productId] ?? 0);
+              const totalDemand = demandMap[prod.id] || 0;
+              const otherBranchDemand = Math.max(0, totalDemand - item.requestedQty);
+
+              let statusPill = '';
+              if (approvedQty === item.requestedQty && approvedQty > 0) {
+                statusPill = `<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-100 text-emerald-800">อนุมัติครบจำนวน</span>`;
+              } else if (approvedQty > 0 && approvedQty < item.requestedQty) {
+                statusPill = `<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-100 text-amber-800">จ่ายบางส่วน (ขาด ${item.requestedQty - approvedQty})</span>`;
+              } else {
+                statusPill = `<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-rose-100 text-rose-700">งดจ่ายรายการนี้ (0)</span>`;
+              }
+
+              return `
+                <tr class="border-b border-slate-100 last:border-none">
+                  <td class="py-3.5 px-4">
+                    <div class="font-semibold text-sm text-slate-900">${escapeHtml(prod.name)}</div>
+                    <div class="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500">
+                      <span class="font-mono text-[11px] text-slate-400">${escapeHtml(prod.sku)}</span>
+                      <span>• คงเหลือที่${escapeHtml(branchAcc.label)}: <strong class="text-slate-700">${branchCurrent} ${escapeHtml(prod.unit)}</strong></span>
+                      ${otherBranchDemand > 0
+                        ? `<span class="px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200 font-semibold">ยอดที่สาขาอื่นกำลังขอเบิกรวม: ${otherBranchDemand} ${escapeHtml(prod.unit)}</span>`
+                        : `<span class="text-slate-400">• ไม่มีสาขาอื่นขอเบิกรายการนี้</span>`
+                      }
+                    </div>
+                  </td>
+
+                  <td class="py-3.5 px-3 text-center">
+                    <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold tabular-nums ${
+                      centralAvail < totalDemand
+                        ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                        : 'bg-emerald-100 text-emerald-800'
+                    }">
+                      ${centralAvail} ${escapeHtml(prod.unit)}
+                    </span>
+                  </td>
+
+                  <td class="py-3.5 px-3 text-center">
+                    <span class="text-sm font-bold text-slate-800 tabular-nums">${item.requestedQty}</span>
+                    <span class="text-xs text-slate-500">${escapeHtml(prod.unit)}</span>
+                  </td>
+
+                  <td class="py-3.5 px-4">
+                    <div class="flex flex-col items-center">
+                      <div class="inline-flex items-center rounded-xl border-2 border-amber-400 bg-amber-50/40 p-1 shadow-2xs">
+                        <button
+                          type="button"
+                          onclick="updateApprovalQty('${req.id}', '${prod.id}', ${approvedQty - 1})"
+                          class="w-7 h-7 rounded-lg bg-white hover:bg-slate-100 text-slate-700 font-bold flex items-center justify-center border border-slate-200 transition cursor-pointer"
+                        >-</button>
+                        <input
+                          type="number"
+                          min="0"
+                          max="${centralAvail}"
+                          value="${approvedQty}"
+                          onchange="updateApprovalQty('${req.id}', '${prod.id}', this.value)"
+                          class="w-14 text-center text-sm font-bold text-slate-900 bg-transparent outline-none tabular-nums"
+                        />
+                        <button
+                          type="button"
+                          onclick="updateApprovalQty('${req.id}', '${prod.id}', ${approvedQty + 1})"
+                          class="w-7 h-7 rounded-lg bg-white hover:bg-slate-100 text-slate-700 font-bold flex items-center justify-center border border-slate-200 transition cursor-pointer"
+                        >+</button>
+                      </div>
+                      <div class="mt-1.5">${statusPill}</div>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join('');
+
+            return `
+              <div class="bg-white rounded-2xl border-2 border-amber-200 shadow-sm overflow-hidden mb-6">
+                <div class="bg-gradient-to-r from-emerald-900 to-emerald-800 text-white px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div class="flex items-center gap-3">
+                    <span class="px-3 py-1 rounded-lg bg-amber-400 text-emerald-950 font-mono text-xs font-extrabold tracking-wide">
+                      ${escapeHtml(req.id)}
+                    </span>
+                    <div>
+                      <h4 class="font-bold text-base">${escapeHtml(branchAcc.fullTitle)}</h4>
+                      <p class="text-xs text-emerald-200">ส่งคำขอเมื่อ: ${formatThaiDateTime(req.createdAt)}</p>
+                    </div>
+                  </div>
+                  <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-200 border border-amber-400/40 self-start sm:self-center">
+                    <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                    <span>รออนุมัติจากคลังกลาง</span>
+                  </span>
+                </div>
+
+                <div class="bg-amber-50/70 px-5 py-2.5 border-b border-amber-100 flex items-center gap-2 text-xs text-amber-900">
+                  <svg class="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                  </svg>
+                  <span><strong>หมายเหตุจากสาขา:</strong> ${escapeHtml(req.branchNote)}</span>
+                </div>
+
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left border-collapse">
+                    <thead>
+                      <tr class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600">
+                        <th class="py-3 px-4">รายการสินค้าที่ขอเบิก &amp; ยอดขอเบิกจากสาขาอื่น</th>
+                        <th class="py-3 px-3 text-center">สต็อกคงเหลือในคลังกลาง</th>
+                        <th class="py-3 px-3 text-center">จำนวนที่สาขาขอเบิก</th>
+                        <th class="py-3 px-4 text-center text-amber-800 bg-amber-50/60">จำนวนที่อนุมัติจ่ายจริง</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${itemRowsHtml}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="p-5 bg-slate-50 border-t border-slate-200 flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+                  <div class="flex-1">
+                    <label class="block text-xs font-bold text-slate-700 mb-1.5">
+                      หมายเหตุจาก Admin (แจ้งให้สาขาทราบ เช่น เหตุผลการแบ่งจ่าย)
+                    </label>
+                    <input
+                      type="text"
+                      value="${escapeHtml(draft.adminNote)}"
+                      oninput="updateApprovalNote('${req.id}', this.value)"
+                      placeholder="เช่น แบ่งจ่าย 5 กระสอบ เก็บสำรองให้สาขาอื่น"
+                      class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                    />
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2.5 shrink-0">
+                    <button
+                      type="button"
+                      onclick="openRejectModal('${req.id}')"
+                      class="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition cursor-pointer"
+                    >
+                      ปฏิเสธคำขอ
+                    </button>
+                    <button
+                      type="button"
+                      onclick="approveRequisition('${req.id}')"
+                      class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white bg-emerald-700 hover:bg-emerald-800 shadow-sm transition cursor-pointer"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span>ยืนยันอนุมัติและตัดสต็อก</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('');
+
+      const processedHtml = processedReqs.length === 0 ? '' : `
+        <div class="mt-10">
+          <h3 class="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+            <span>รายการใบเบิกที่ดำเนินการอนุมัติ/ปฏิเสธแล้ว</span>
+            <span class="px-2 py-0.5 rounded-full text-xs bg-slate-200 text-slate-700">${processedReqs.length}</span>
+          </h3>
+          <div class="space-y-3">
+            ${processedReqs.map(req => renderRequisitionSummaryCard(req, true)).join('')}
+          </div>
+        </div>
+      `;
+
+      return `
+        <div class="mb-5">
+          <h3 class="text-lg font-bold text-slate-900">อนุมัติคำขอเบิกสินค้าจากสาขาย่อย (Partial Fulfillment)</h3>
+          <p class="text-xs sm:text-sm text-slate-500 mt-0.5">
+            ตรวจสอบสต็อกคลังกลางและยอดขอเบิกรวมจากสาขาอื่น สามารถปรับแก้ <strong>"จำนวนที่อนุมัติจ่ายจริง"</strong> เพื่อแบ่งจ่ายได้ ระบบจะตัดสต็อกคลังกลางและเพิ่มเข้าสาขาตามยอดจ่ายจริง
+          </p>
+        </div>
+
+        ${pendingCardsHtml}
+        ${processedHtml}
+      `;
+    }
+
+    // =========================================================================
+    // 11. ADMIN TAB 2: BRANCH STOCK INSPECTOR (ตรวจสอบสต็อกแต่ละสาขา)
+    // =========================================================================
+    function renderAdminBranchInspector() {
+      const target = appState.inspectedBranchId || 'branch1';
+      const branches = getBranchAccounts();
+
+      const selectorButtonsHtml = [
+        ...branches.map(b => ({ id: b.id, label: b.label })),
+        { id: 'compare', label: 'ภาพรวมเปรียบเทียบทั้ง 3 สาขา' }
+      ].map(btn => {
+        const isActive = target === btn.id;
+        return `
+          <button
+            type="button"
+            onclick="selectInspectedBranch('${btn.id}')"
+            class="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer ${
+              isActive
+                ? 'bg-amber-500 text-emerald-950 shadow-sm'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }"
+          >
+            ${escapeHtml(btn.label)}
+          </button>
+        `;
+      }).join('');
+
+      // View A: เปรียบเทียบทั้ง 3 สาขาพร้อมกัน
+      if (target === 'compare') {
+        const compareRowsHtml = appState.products.map(p => {
+          const b1 = p.stock.branch1 || 0;
+          const b2 = p.stock.branch2 || 0;
+          const b3 = p.stock.branch3 || 0;
+          const sumBranches = b1 + b2 + b3;
+
+          const renderBranchCell = (qty) => {
+            if (qty === 0) {
+              return `<span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-rose-100 text-rose-700 tabular-nums">0 (หมดสต็อก)</span>`;
+            }
+            if (qty <= p.minStock) {
+              return `<span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-800 tabular-nums">${qty} (ใกล้หมด)</span>`;
+            }
+            return `<span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-800 tabular-nums">${qty}</span>`;
+          };
+
+          return `
+            <tr class="hover:bg-slate-50 border-b border-slate-100 last:border-none">
+              <td class="py-3.5 px-4 font-mono text-xs text-slate-500">${escapeHtml(p.sku)}</td>
+              <td class="py-3.5 px-4">
+                <div class="font-semibold text-sm text-slate-900">${escapeHtml(p.name)}</div>
+                <span class="text-[11px] text-slate-400">${escapeHtml(p.category)}</span>
+              </td>
+              <td class="py-3.5 px-3 text-center text-xs text-slate-500">${escapeHtml(p.unit)}</td>
+              <td class="py-3.5 px-3 text-center text-xs font-semibold text-slate-600 tabular-nums">${p.minStock}</td>
+              <td class="py-3.5 px-3 text-center">${renderBranchCell(b1)}</td>
+              <td class="py-3.5 px-3 text-center">${renderBranchCell(b2)}</td>
+              <td class="py-3.5 px-3 text-center">${renderBranchCell(b3)}</td>
+              <td class="py-3.5 px-3 text-center font-bold text-slate-800 text-sm tabular-nums">${sumBranches}</td>
+              <td class="py-3.5 px-4 text-center bg-emerald-50/50 font-bold text-emerald-800 text-sm tabular-nums">${p.stock.central}</td>
+            </tr>
+          `;
+        }).join('');
+
+        return `
+          <div class="mb-5">
+            <h3 class="text-lg font-bold text-slate-900">ตรวจสอบสต็อกแต่ละสาขา (Branch Stock Inspector)</h3>
+            <p class="text-xs sm:text-sm text-slate-500 mt-0.5">เลือกสาขาที่ต้องการตรวจสอบสต็อกคงเหลือ จุดสั่งซื้อขั้นต่ำ และสถานะสินค้า</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2 mb-6">
+            ${selectorButtonsHtml}
+          </div>
+
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+            <div class="p-5 border-b border-slate-200">
+              <h4 class="text-base font-bold text-slate-900">ตารางเปรียบเทียบสต็อกทั้ง 3 สาขา</h4>
+              <p class="text-xs text-slate-500 mt-0.5">แสดงจำนวนคงเหลือเทียบกับจุดสั่งซื้อขั้นต่ำ (Min Stock) ของแต่ละสาขา</p>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse">
+                <thead>
+                  <tr class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider">
+                    <th class="py-3.5 px-4">รหัสสินค้า</th>
+                    <th class="py-3.5 px-4">ชื่อสินค้าอาหารสัตว์</th>
+                    <th class="py-3.5 px-3 text-center">หน่วย</th>
+                    <th class="py-3.5 px-3 text-center">Min Stock</th>
+                    <th class="py-3.5 px-3 text-center">สาขา 1 (ในเมือง)</th>
+                    <th class="py-3.5 px-3 text-center">สาขา 2 (รอบเมือง)</th>
+                    <th class="py-3.5 px-3 text-center">สาขา 3 (อำเภอ)</th>
+                    <th class="py-3.5 px-3 text-center">รวม 3 สาขา</th>
+                    <th class="py-3.5 px-4 text-center bg-emerald-50/70 text-emerald-900">คลังกลาง</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${compareRowsHtml}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      }
+
+      // View B: ตรวจสอบเจาะจงรายสาขา (branch1 / branch2 / branch3)
+      const branchAcc = getAccount(target) || branches[0];
+      const branchPendingMap = getBranchPendingDemandMap(branchAcc.id);
+
+      const totalSkus = appState.products.length;
+      const totalBranchUnits = appState.products.reduce((sum, p) => sum + (p.stock[branchAcc.id] || 0), 0);
+      const lowOrOutCount = appState.products.filter(p => (p.stock[branchAcc.id] || 0) <= p.minStock).length;
+      const totalIncomingPending = Object.values(branchPendingMap).reduce((a, b) => a + b, 0);
+
+      const branchRowsHtml = appState.products.map(p => {
+        const qty = p.stock[branchAcc.id] || 0;
+        const incomingQty = branchPendingMap[p.id] || 0;
+
+        let statusBadge = '';
+        if (qty === 0) {
+          statusBadge = `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700">หมดสต็อก</span>`;
+        } else if (qty <= p.minStock) {
+          statusBadge = `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800">ใกล้หมด</span>`;
+        } else {
+          statusBadge = `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">ปกติ</span>`;
+        }
+
+        return `
+          <tr class="hover:bg-slate-50 border-b border-slate-100 last:border-none">
+            <td class="py-3.5 px-4 font-mono text-xs font-semibold text-slate-600">${escapeHtml(p.sku)}</td>
+            <td class="py-3.5 px-4 font-semibold text-sm text-slate-900">${escapeHtml(p.name)}</td>
+            <td class="py-3.5 px-3 text-center">
+              <span class="px-2.5 py-0.5 rounded-md text-xs bg-slate-100 text-slate-700 font-medium">${escapeHtml(p.category)}</span>
+            </td>
+            <td class="py-3.5 px-3 text-center text-xs text-slate-500">${escapeHtml(p.unit)}</td>
+            <td class="py-3.5 px-3 text-center">
+              <span class="text-base font-extrabold tabular-nums ${
+                qty === 0 ? 'text-rose-600' : qty <= p.minStock ? 'text-amber-600' : 'text-emerald-700'
+              }">${qty}</span>
+            </td>
+            <td class="py-3.5 px-3 text-center text-xs font-semibold text-slate-600 tabular-nums">${p.minStock}</td>
+            <td class="py-3.5 px-3 text-center">${statusBadge}</td>
+            <td class="py-3.5 px-4 text-center">
+              ${incomingQty > 0
+                ? `<span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-900 tabular-nums">+${incomingQty} ${escapeHtml(p.unit)}</span>`
+                : `<span class="text-xs text-slate-400">-</span>`
+              }
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      return `
+        <div class="mb-5">
+          <h3 class="text-lg font-bold text-slate-900">ตรวจสอบสต็อกแต่ละสาขา (Branch Stock Inspector)</h3>
+          <p class="text-xs sm:text-sm text-slate-500 mt-0.5">เลือกดูข้อมูลสต็อกรายสาขาอย่างละเอียด เพื่อวางแผนอนุมัติและกระจายสินค้าได้อย่างเหมาะสม</p>
+        </div>
+
+        <!-- Branch Selector Buttons -->
+        <div class="flex flex-wrap items-center gap-2 mb-6">
+          ${selectorButtonsHtml}
+        </div>
+
+        <!-- 4 KPI Cards for Selected Branch -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
+            <span class="text-xs font-semibold text-slate-500 uppercase">จำนวนรายการสินค้าทั้งหมด</span>
+            <div class="mt-2 flex items-baseline gap-2">
+              <span class="text-2xl sm:text-3xl font-bold text-slate-900 tabular-nums">${totalSkus}</span>
+              <span class="text-xs text-slate-500">รายการ (SKU)</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">${escapeHtml(branchAcc.label)}</p>
+          </div>
+
+          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
+            <span class="text-xs font-semibold text-slate-500 uppercase">จำนวนกระสอบ/หน่วยรวมในสาขา</span>
+            <div class="mt-2 flex items-baseline gap-2">
+              <span class="text-2xl sm:text-3xl font-bold text-emerald-700 tabular-nums">${totalBranchUnits}</span>
+              <span class="text-xs text-slate-500">กระสอบ / ถุง</span>
+            </div>
+            <p class="text-xs text-emerald-600 font-medium mt-1">สต็อกพร้อมขายหน้าร้าน</p>
+          </div>
+
+          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
+            <span class="text-xs font-semibold text-slate-500 uppercase">สินค้าใกล้หมด / หมดสต็อก</span>
+            <div class="mt-2 flex items-baseline gap-2">
+              <span class="text-2xl sm:text-3xl font-bold ${lowOrOutCount > 0 ? 'text-rose-600' : 'text-slate-900'} tabular-nums">${lowOrOutCount}</span>
+              <span class="text-xs text-slate-500">รายการ</span>
+            </div>
+            <p class="text-xs text-rose-600 font-medium mt-1">${lowOrOutCount > 0 ? 'ต่ำกว่าหรือเท่ากับ Min Stock' : 'สต็อกอยู่ในเกณฑ์ปกติ'}</p>
+          </div>
+
+          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
+            <span class="text-xs font-semibold text-slate-500 uppercase">ยอดที่กำลังรออนุมัติส่งเข้าสาขานี้</span>
+            <div class="mt-2 flex items-baseline gap-2">
+              <span class="text-2xl sm:text-3xl font-bold text-amber-600 tabular-nums">${totalIncomingPending}</span>
+              <span class="text-xs text-slate-500">กระสอบ / ถุง</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">จากใบคำขอเบิกที่รออนุมัติ</p>
+          </div>
+        </div>
+
+        <!-- Detailed Stock Table for Selected Branch -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div class="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h4 class="text-base font-bold text-slate-900">รายการสต็อกสินค้าทั้งหมด — ${escapeHtml(branchAcc.fullTitle)}</h4>
+              <p class="text-xs text-slate-500 mt-0.5">เปรียบเทียบสต็อกคงเหลือในสาขากับจุดสั่งซื้อขั้นต่ำ (Min Stock) และยอดรออนุมัติเบิก</p>
+            </div>
+            <span class="px-3 py-1 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 self-start sm:self-center">
+              บัญชีสาขา: ${escapeHtml(branchAcc.username)}
+            </span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider">
+                  <th class="py-3.5 px-4">รหัสสินค้า</th>
+                  <th class="py-3.5 px-4">ชื่อสินค้าอาหารสัตว์</th>
+                  <th class="py-3.5 px-3 text-center">หมวดหมู่</th>
+                  <th class="py-3.5 px-3 text-center">หน่วยนับ</th>
+                  <th class="py-3.5 px-3 text-center">สต็อกคงเหลือในสาขา</th>
+                  <th class="py-3.5 px-3 text-center">จุดสั่งซื้อขั้นต่ำ (Min Stock)</th>
+                  <th class="py-3.5 px-3 text-center">สถานะสต็อก</th>
+                  <th class="py-3.5 px-4 text-center">จำนวนที่กำลังรออนุมัติเบิก</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${branchRowsHtml}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // 12. ADMIN TAB 3: CENTRAL WAREHOUSE & RESTOCK
+    // =========================================================================
+    function renderAdminCentralWarehouse() {
+      const demandMap = getPendingDemandMap();
+      const totalCentralUnits = appState.products.reduce((sum, p) => sum + p.stock.central, 0);
+      const lowCentralCount = appState.products.filter(p => p.stock.central <= p.minStock * 2).length;
+      const totalPendingDemand = Object.values(demandMap).reduce((a, b) => a + b, 0);
+
+      const rowsHtml = appState.products.map(p => {
+        const central = p.stock.central;
+        const demand = demandMap[p.id] || 0;
+        const isShortage = demand > central;
+
+        let statusBadge = '';
+        if (central === 0) {
+          statusBadge = `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700">หมดสต็อก</span>`;
+        } else if (central <= p.minStock * 2) {
+          statusBadge = `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800">สต็อกจำกัด</span>`;
+        } else {
+          statusBadge = `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">พร้อมจ่าย</span>`;
+        }
+
+        return `
+          <tr class="hover:bg-slate-50 border-b border-slate-100 last:border-none">
+            <td class="py-3.5 px-4 font-mono text-xs font-semibold text-slate-600">${escapeHtml(p.sku)}</td>
+            <td class="py-3.5 px-4">
+              <div class="font-semibold text-sm text-slate-900">${escapeHtml(p.name)}</div>
+              <span class="text-[11px] text-slate-400">${escapeHtml(p.category)}</span>
+            </td>
+            <td class="py-3.5 px-3 text-center text-xs text-slate-500">${escapeHtml(p.unit)}</td>
+            <td class="py-3.5 px-3 text-center bg-emerald-50/40">
+              <span class="inline-flex items-center px-3 py-1 rounded-xl text-sm font-extrabold tabular-nums ${
+                central <= p.minStock * 2 ? 'bg-amber-500 text-white' : 'bg-emerald-700 text-white'
+              }">
+                ${central}
+              </span>
+            </td>
+            <td class="py-3.5 px-3 text-center text-xs font-semibold text-slate-600 tabular-nums">${p.minStock}</td>
+            <td class="py-3.5 px-3 text-center">
+              ${demand > 0
+                ? `<span class="px-2.5 py-1 rounded-lg text-xs font-bold tabular-nums ${
+                    isShortage ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-800'
+                  }">รออนุมัติ ${demand}</span>`
+                : `<span class="text-xs text-slate-400">-</span>`
+              }
+            </td>
+            <td class="py-3.5 px-3 text-center">${statusBadge}</td>
+            <td class="py-3.5 px-4 text-right">
+              <button
+                onclick="openRestockModal('${p.id}')"
+                class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 hover:bg-emerald-700 text-emerald-700 hover:text-white border border-emerald-200 hover:border-emerald-700 transition cursor-pointer"
+              >
+                <span>+ รับเข้าสต็อก</span>
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      return `
+        <!-- KPI Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
+            <span class="text-xs font-semibold text-slate-500 uppercase">สต็อกคลังกลางรวมทั้งหมด</span>
+            <div class="mt-2 flex items-baseline gap-2">
+              <span class="text-2xl sm:text-3xl font-bold text-emerald-700 tabular-nums">${totalCentralUnits}</span>
+              <span class="text-xs text-slate-500">กระสอบ / ถุง</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">พร้อมจัดส่งให้ทั้ง 3 สาขา</p>
+          </div>
+
+          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
+            <span class="text-xs font-semibold text-slate-500 uppercase">ยอดขอเบิกรออนุมัติรวม</span>
+            <div class="mt-2 flex items-baseline gap-2">
+              <span class="text-2xl sm:text-3xl font-bold text-amber-600 tabular-nums">${totalPendingDemand}</span>
+              <span class="text-xs text-slate-500">กระสอบ / ถุง</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">จากสาขาย่อยทั้งหมด</p>
+          </div>
+
+          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
+            <span class="text-xs font-semibold text-slate-500 uppercase">รายการสต็อกคลังกลางจำกัด</span>
+            <div class="mt-2 flex items-baseline gap-2">
+              <span class="text-2xl sm:text-3xl font-bold text-rose-600 tabular-nums">${lowCentralCount}</span>
+              <span class="text-xs text-slate-500">รายการ</span>
+            </div>
+            <p class="text-xs text-rose-600 font-medium mt-1">ควรสั่งผลิต/รับเข้าเพิ่มเติม</p>
+          </div>
+
+          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
+            <span class="text-xs font-semibold text-slate-500 uppercase">รายการสินค้าในระบบ</span>
+            <div class="mt-2 flex items-baseline gap-2">
+              <span class="text-2xl sm:text-3xl font-bold text-slate-900 tabular-nums">${appState.products.length}</span>
+              <span class="text-xs text-slate-500">SKU</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">สินค้ามาตรฐานทุกสาขา</p>
+          </div>
+        </div>
+
+        <!-- Central Warehouse Stock Table -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div class="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 class="text-base sm:text-lg font-bold text-slate-900">รายการสินค้าคงเหลือในคลังกลาง</h3>
+              <p class="text-xs sm:text-sm text-slate-500 mt-0.5">บริหารรับสินค้าเข้าคลังกลาง และเพิ่มรายการสินค้าอาหารสัตว์ใหม่เข้าสู่ระบบ</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                onclick="openRestockModal()"
+                class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs transition cursor-pointer"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                <span>รับสินค้าเข้าคลังกลาง (+ Restock)</span>
+              </button>
+              <button
+                onclick="openNewProductModal()"
+                class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-600 text-emerald-950 shadow-xs transition cursor-pointer"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+                <span>+ เพิ่มรายการสินค้าอาหารสัตว์ใหม่</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider">
+                  <th class="py-3.5 px-4">รหัสสินค้า</th>
+                  <th class="py-3.5 px-4">ชื่อสินค้าอาหารสัตว์</th>
+                  <th class="py-3.5 px-3 text-center">หน่วย</th>
+                  <th class="py-3.5 px-3 text-center bg-emerald-50/70 text-emerald-900">คงเหลือคลังกลาง</th>
+                  <th class="py-3.5 px-3 text-center">Min Stock (สาขา)</th>
+                  <th class="py-3.5 px-3 text-center">ยอดขอเบิกรออนุมัติ</th>
+                  <th class="py-3.5 px-3 text-center">สถานะคลังกลาง</th>
+                  <th class="py-3.5 px-4 text-right">เติมสต็อก</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // 13. ADMIN TAB 4: AUDIT LOGS (ประวัติการเคลื่อนไหวสต็อก)
+    // =========================================================================
+    function updateHistoryFilter(field, value) {
+      appState.historyFilter[field] = value;
+      renderApp();
+    }
+
+    function renderAdminAuditLogs() {
+      const filter = appState.historyFilter;
+
+      const filtered = appState.movements.filter(m => {
+        if (filter.location !== 'all' && m.locationId !== filter.location) {
+          return false;
+        }
+        if (filter.type !== 'all' && m.type !== filter.type) {
+          return false;
+        }
+        if (filter.search) {
+          const prod = getProduct(m.productId);
+          const text = `${m.detail} ${prod ? prod.name : ''} ${prod ? prod.sku : ''}`.toLowerCase();
+          if (!text.includes(filter.search.toLowerCase())) return false;
+        }
+        return true;
+      });
+
+      const typeBadgeMap = {
+        restock: { label: 'รับเข้าคลังกลาง', cls: 'bg-emerald-100 text-emerald-800' },
+        dispatch: { label: 'อนุมัติจ่ายให้สาขา', cls: 'bg-amber-100 text-amber-800' },
+        sale: { label: 'ขายหน้าร้านสาขา', cls: 'bg-sky-100 text-sky-800' },
+        new_product: { label: 'เพิ่มสินค้าใหม่', cls: 'bg-purple-100 text-purple-800' }
+      };
+
+      const rowsHtml = filtered.length === 0
+        ? `<tr><td colspan="5" class="py-10 text-center text-sm text-slate-400">ไม่พบประวัติการเคลื่อนไหวสต็อกตามเงื่อนไขที่เลือก</td></tr>`
+        : filtered.map(m => {
+            const prod = getProduct(m.productId);
+            const locLabel = m.locationId === 'central'
+              ? 'คลังกลาง'
+              : (getAccount(m.locationId)?.label || m.locationId);
+            const tb = typeBadgeMap[m.type] || { label: m.type, cls: 'bg-slate-100 text-slate-700' };
+
+            return `
+              <tr class="hover:bg-slate-50 border-b border-slate-100 last:border-none">
+                <td class="py-3 px-4 text-xs text-slate-500 whitespace-nowrap">${formatThaiDateTime(m.timestamp)}</td>
+                <td class="py-3 px-3">
+                  <span class="px-2.5 py-1 rounded-full text-[11px] font-bold ${tb.cls}">${tb.label}</span>
+                </td>
+                <td class="py-3 px-3 text-xs font-semibold text-slate-700">${escapeHtml(locLabel)}</td>
+                <td class="py-3 px-4">
+                  <div class="text-sm font-semibold text-slate-900">${escapeHtml(prod ? prod.name : m.productId)}</div>
+                  <div class="text-xs text-slate-500 mt-0.5">${escapeHtml(m.detail)}</div>
+                </td>
+                <td class="py-3 px-4 text-right font-bold text-sm tabular-nums ${
+                  m.qtyChange > 0 ? 'text-emerald-600' : m.qtyChange < 0 ? 'text-rose-600' : 'text-slate-400'
+                }">
+                  ${m.qtyChange > 0 ? `+${m.qtyChange}` : m.qtyChange} ${escapeHtml(prod ? prod.unit : '')}
+                </td>
+              </tr>
+            `;
+          }).join('');
+
+      return `
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div class="p-5 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div>
+              <h3 class="text-base sm:text-lg font-bold text-slate-900">ประวัติการเคลื่อนไหวสต็อก (Audit Logs)</h3>
+              <p class="text-xs sm:text-sm text-slate-500 mt-0.5">ตรวจสอบรายการรับเข้าคลังกลาง การอนุมัติจ่ายให้สาขา และการขายหน้าร้านของทุกสาขา</p>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+              <select
+                onchange="updateHistoryFilter('location', this.value)"
+                class="px-3 py-2 rounded-xl border border-slate-300 text-xs font-medium bg-white outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="all" ${filter.location === 'all' ? 'selected' : ''}>ทุกสาขา &amp; คลังกลาง</option>
+                <option value="central" ${filter.location === 'central' ? 'selected' : ''}>คลังกลาง</option>
+                <option value="branch1" ${filter.location === 'branch1' ? 'selected' : ''}>สาขา 1 (ในเมือง)</option>
+                <option value="branch2" ${filter.location === 'branch2' ? 'selected' : ''}>สาขา 2 (รอบเมือง)</option>
+                <option value="branch3" ${filter.location === 'branch3' ? 'selected' : ''}>สาขา 3 (อำเภอ)</option>
+              </select>
+
+              <select
+                onchange="updateHistoryFilter('type', this.value)"
+                class="px-3 py-2 rounded-xl border border-slate-300 text-xs font-medium bg-white outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="all" ${filter.type === 'all' ? 'selected' : ''}>ทุกประเภทรายการ</option>
+                <option value="dispatch" ${filter.type === 'dispatch' ? 'selected' : ''}>อนุมัติจ่ายให้สาขา</option>
+                <option value="restock" ${filter.type === 'restock' ? 'selected' : ''}>รับเข้าคลังกลาง</option>
+                <option value="sale" ${filter.type === 'sale' ? 'selected' : ''}>ขายหน้าร้านสาขา</option>
+                <option value="new_product" ${filter.type === 'new_product' ? 'selected' : ''}>เพิ่มสินค้าใหม่</option>
+              </select>
+
+              <input
+                type="text"
+                value="${escapeHtml(filter.search)}"
+                oninput="updateHistoryFilter('search', this.value)"
+                placeholder="ค้นหาชื่อสินค้า / เลขที่ใบเบิก..."
+                class="px-3.5 py-2 rounded-xl border border-slate-300 text-xs bg-white outline-none focus:ring-2 focus:ring-emerald-500 w-48"
+              />
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider">
+                  <th class="py-3 px-4">วัน-เวลา</th>
+                  <th class="py-3 px-3">ประเภท</th>
+                  <th class="py-3 px-3">จุดทำรายการ</th>
+                  <th class="py-3 px-4">รายการสินค้า &amp; รายละเอียด</th>
+                  <th class="py-3 px-4 text-right">จำนวนเคลื่อนไหว</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // 14. BRANCH USER TABS (STRICTLY ISOLATED TO OWN BRANCH DATA ONLY)
+    // =========================================================================
+    function renderBranchStockAndPOS(account) {
+      const branchId = account.id;
+      const totalBranchUnits = appState.products.reduce((acc, p) => acc + (p.stock[branchId] || 0), 0);
+      const lowStockProducts = appState.products.filter(p => (p.stock[branchId] || 0) <= p.minStock);
+      const myPendingReqs = appState.requisitions.filter(r => r.branchId === branchId && r.status === 'pending');
+      const myCompletedReqs = appState.requisitions.filter(r => r.branchId === branchId && r.status !== 'pending');
+
+      // แสดงเฉพาะข้อมูลสต็อกของสาขาที่ล็อคอินอยู่เท่านั้น (ไม่แสดงสต็อกคลังกลางหรือสาขาอื่น)
+      const productRowsHtml = appState.products.map(p => {
+        const myQty = p.stock[branchId] || 0;
+
+        let statusBadge = '';
+        if (myQty === 0) {
+          statusBadge = `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700">หมดสต็อก</span>`;
+        } else if (myQty <= p.minStock) {
+          statusBadge = `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800">ใกล้หมด (ต่ำกว่า Min)</span>`;
+        } else {
+          statusBadge = `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">ปกติ</span>`;
+        }
+
+        return `
+          <tr class="hover:bg-slate-50/90 transition border-b border-slate-100 last:border-none">
+            <td class="py-3.5 px-4 font-mono text-xs text-slate-500">${escapeHtml(p.sku)}</td>
+            <td class="py-3.5 px-4">
+              <div class="font-semibold text-sm text-slate-900">${escapeHtml(p.name)}</div>
+              <span class="text-[11px] px-2 py-0.2 rounded bg-slate-100 text-slate-600">${escapeHtml(p.category)}</span>
+            </td>
+            <td class="py-3.5 px-3 text-center">
+              <span class="text-base font-extrabold tabular-nums ${
+                myQty === 0 ? 'text-rose-600' : myQty <= p.minStock ? 'text-amber-600' : 'text-emerald-700'
+              }">${myQty}</span>
+              <span class="text-xs text-slate-500 ml-0.5">${escapeHtml(p.unit)}</span>
+            </td>
+            <td class="py-3.5 px-3 text-center text-xs font-semibold text-slate-600 tabular-nums">
+              ${p.minStock} ${escapeHtml(p.unit)}
+            </td>
+            <td class="py-3.5 px-3 text-center">${statusBadge}</td>
+            <td class="py-3.5 px-4">
+              <div class="flex flex-wrap items-center justify-end gap-1.5">
+                <button
+                  onclick="simulateBranchSale('${p.id}', 1)"
+                  ${myQty < 1 ? 'disabled' : ''}
+                  class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    myQty < 1
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                      : 'bg-amber-500 hover:bg-amber-600 text-emerald-950 shadow-2xs'
+                  }"
+                >
+                  ขาย -1
+                </button>
+                <button
+                  onclick="simulateBranchSale('${p.id}', 5)"
+                  ${myQty < 5 ? 'disabled' : ''}
+                  class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    myQty < 5
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                      : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
+                  }"
+                >
+                  ขาย -5
+                </button>
+                <button
+                  onclick="quickRequestProduct('${p.id}')"
+                  class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 hover:bg-emerald-700 text-emerald-700 hover:text-white border border-emerald-200 hover:border-emerald-700 transition cursor-pointer"
+                >
+                  + ขอเบิก
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      return `
+        <!-- Branch KPI Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
+            <span class="text-xs font-semibold text-slate-500 uppercase">สต็อกหน้าร้านคงเหลือ</span>
+            <div class="mt-2 flex items-baseline gap-2">
+              <span class="text-2xl sm:text-3xl font-bold text-emerald-700 tabular-nums">${totalBranchUnits}</span>
+              <span class="text-xs text-slate-500">กระสอบ / ถุง</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">${escapeHtml(account.label)}</p>
+          </div>
+
+          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
+            <span class="text-xs font-semibold text-slate-500 uppercase">สินค้าใกล้หมด / หมดสต็อก</span>
+            <div class="mt-2 flex items-baseline gap-2">
+              <span class="text-2xl sm:text-3xl font-bold ${lowStockProducts.length > 0 ? 'text-rose-600' : 'text-slate-900'} tabular-nums">${lowStockProducts.length}</span>
+              <span class="text-xs text-slate-500">รายการ</span>
+            </div>
+            <p class="text-xs text-rose-600 font-medium mt-1">${lowStockProducts.length > 0 ? 'ควรส่งใบขอเบิกเติมสต็อก' : 'สต็อกหน้าร้านเพียงพอ'}</p>
+          </div>
+
+          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
+            <span class="text-xs font-semibold text-slate-500 uppercase">ใบเบิกรออนุมัติ</span>
+            <div class="mt-2 flex items-baseline gap-2">
+              <span class="text-2xl sm:text-3xl font-bold text-amber-600 tabular-nums">${myPendingReqs.length}</span>
+              <span class="text-xs text-slate-500">ใบเบิก</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">รอคลังกลางอนุมัติจัดส่ง</p>
+          </div>
+
+          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
+            <span class="text-xs font-semibold text-slate-500 uppercase">ใบเบิกที่อนุมัติแล้ว</span>
+            <div class="mt-2 flex items-baseline gap-2">
+              <span class="text-2xl sm:text-3xl font-bold text-slate-900 tabular-nums">${myCompletedReqs.length}</span>
+              <span class="text-xs text-slate-500">ใบเบิก</span>
+            </div>
+            <p class="text-xs text-emerald-600 font-medium mt-1">รับสินค้าเข้าสาขาเรียบร้อย</p>
+          </div>
+        </div>
+
+        <!-- Branch Inventory & POS Table -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div class="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 class="text-base sm:text-lg font-bold text-slate-900">รายการสินค้าคงเหลือหน้าร้าน — ${escapeHtml(account.label)}</h3>
+              <p class="text-xs sm:text-sm text-slate-500 mt-0.5">กดปุ่ม <strong>"ขาย -1"</strong> หรือ <strong>"ขาย -5"</strong> เพื่อจำลองการขายหน้าร้านตัดสต็อก หรือสร้างใบขอเบิกจากคลังกลาง</p>
+            </div>
+            <button
+              onclick="switchTab('branch_requisition')"
+              class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-emerald-700 hover:bg-emerald-800 text-white shadow-sm transition shrink-0 cursor-pointer"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+              <span>สร้างใบขอเบิกสินค้าจากคลังกลาง</span>
+            </button>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider">
+                  <th class="py-3.5 px-4">รหัสสินค้า</th>
+                  <th class="py-3.5 px-4">ชื่อสินค้าอาหารสัตว์</th>
+                  <th class="py-3.5 px-3 text-center">คงเหลือหน้าร้าน</th>
+                  <th class="py-3.5 px-3 text-center">จุดสั่งซื้อขั้นต่ำ</th>
+                  <th class="py-3.5 px-3 text-center">สถานะสต็อก</th>
+                  <th class="py-3.5 px-4 text-right">บันทึกการขาย / ขอเบิก</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${productRowsHtml}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderBranchRequisitionBuilder(account) {
+      const branchId = account.id;
+      const draft = appState.draftRequisition;
+
+      const rowsHtml = draft.items.map((row, idx) => {
+        const selectedProd = getProduct(row.productId) || appState.products[0];
+        const branchQty = selectedProd.stock[branchId] || 0;
+
+        // แสดงเฉพาะสต็อกของสาขาตนเองในรายการเลือก (ไม่เปิดเผยสต็อกคลังกลางหรือสาขาอื่น)
+        const optionsHtml = appState.products.map(p => `
+          <option value="${p.id}" ${p.id === row.productId ? 'selected' : ''}>
+            [${escapeHtml(p.sku)}] ${escapeHtml(p.name)} (คงเหลือสาขานี้: ${p.stock[branchId] || 0} ${escapeHtml(p.unit)})
+          </option>
+        `).join('');
+
+        return `
+          <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col md:flex-row md:items-center gap-3">
+            <div class="flex items-center gap-2.5 flex-1">
+              <span class="w-7 h-7 rounded-lg bg-emerald-700 text-white text-xs font-bold flex items-center justify-center shrink-0">
+                ${idx + 1}
+              </span>
+              <div class="flex-1">
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1">เลือกชื่อสินค้าอาหารสัตว์</label>
+                <select
+                  onchange="updateDraftRequisitionRow(${idx}, 'productId', this.value)"
+                  class="w-full px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-sm font-medium text-slate-800 focus:ring-2 focus:ring-emerald-500 outline-none"
+                >
+                  ${optionsHtml}
+                </select>
+                <div class="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-slate-500">
+                  <span>คงเหลือปัจจุบันที่${escapeHtml(account.label)}: <strong class="text-slate-800">${branchQty} ${escapeHtml(selectedProd.unit)}</strong></span>
+                  <span>• จุดสั่งซื้อขั้นต่ำ: <strong>${selectedProd.minStock} ${escapeHtml(selectedProd.unit)}</strong></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-end gap-3 justify-between md:justify-end">
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1">จำนวนที่ต้องการเบิก (${escapeHtml(selectedProd.unit)})</label>
+                <div class="inline-flex items-center rounded-xl border border-slate-300 bg-white p-1">
+                  <button
+                    type="button"
+                    onclick="updateDraftRequisitionRow(${idx}, 'qty', ${row.qty - 1})"
+                    class="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-700 font-bold flex items-center justify-center cursor-pointer"
+                  >-</button>
+                  <input
+                    type="number"
+                    min="1"
+                    value="${row.qty}"
+                    onchange="updateDraftRequisitionRow(${idx}, 'qty', this.value)"
+                    class="w-16 text-center text-sm font-bold text-slate-900 outline-none tabular-nums"
+                  />
+                  <button
+                    type="button"
+                    onclick="updateDraftRequisitionRow(${idx}, 'qty', ${row.qty + 1})"
+                    class="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-700 font-bold flex items-center justify-center cursor-pointer"
+                  >+</button>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onclick="removeDraftRequisitionRow(${idx})"
+                title="ลบรายการนี้"
+                class="p-2.5 rounded-xl text-rose-600 hover:bg-rose-100 border border-transparent hover:border-rose-200 transition cursor-pointer"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="max-w-4xl mx-auto">
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="bg-emerald-900 text-white px-6 py-5 flex items-center justify-between">
+              <div>
+                <span class="text-xs font-semibold uppercase tracking-wider text-amber-300">ใบคำขอเบิกสินค้าจากคลังกลาง</span>
+                <h3 class="text-lg sm:text-xl font-bold mt-0.5">สร้างใบขอเบิกสินค้า — ${escapeHtml(account.fullTitle)}</h3>
+              </div>
+              <span class="hidden sm:inline-block px-3 py-1.5 rounded-xl bg-emerald-800 border border-emerald-700 font-mono text-xs text-emerald-100">
+                เลขที่ใบเบิก: ${generateNextReqId()}
+              </span>
+            </div>
+
+            <div class="p-6 space-y-5">
+              <div class="flex items-center justify-between">
+                <h4 class="text-sm font-bold text-slate-800">รายการสินค้าที่ต้องการเบิก (${draft.items.length} รายการ)</h4>
+                <button
+                  type="button"
+                  onclick="addDraftRequisitionRow()"
+                  class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-100 hover:bg-amber-200 text-amber-900 transition cursor-pointer"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>+ เพิ่มรายการสินค้า</span>
+                </button>
+              </div>
+
+              <div class="space-y-3">
+                ${rowsHtml}
+              </div>
+
+              <div>
+                <label class="block text-sm font-bold text-slate-700 mb-1.5">หมายเหตุถึงผู้ดูแลคลังกลาง</label>
+                <textarea
+                  rows="2"
+                  oninput="updateDraftRequisitionNote(this.value)"
+                  placeholder="ระบุเหตุผลการขอเบิก เช่น ลูกค้าสั่งจองล่วงหน้า หรือสต็อกหน้าร้านใกล้หมด..."
+                  class="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                >${escapeHtml(draft.note)}</textarea>
+              </div>
+
+              <div class="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <p class="text-xs text-slate-500">
+                  * เมื่อส่งคำขอแล้ว ผู้ดูแลคลังกลางจะพิจารณาอนุมัติจำนวนจ่ายจริงและโอนสต็อกเข้าสาขาของคุณ
+                </p>
+                <button
+                  type="button"
+                  onclick="submitRequisition()"
+                  class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-bold bg-emerald-700 hover:bg-emerald-800 text-white shadow-md transition cursor-pointer"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
+                  <span>ส่งใบคำขอเบิกไปยังคลังกลาง</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderBranchRequisitionHistory(account) {
+      const branchId = account.id;
+      const myReqs = appState.requisitions.filter(r => r.branchId === branchId);
+
+      const cardsHtml = myReqs.length === 0
+        ? `
+          <div class="bg-white rounded-2xl border border-slate-200 p-10 text-center">
+            <h4 class="text-base font-bold text-slate-800">ยังไม่มีประวัติใบคำขอเบิกสินค้าของสาขานี้</h4>
+            <p class="text-sm text-slate-500 mt-1 mb-4">เริ่มต้นสร้างใบคำขอเบิกสินค้าอาหารสัตว์จากคลังกลางได้เลย</p>
+            <button onclick="switchTab('branch_requisition')" class="px-5 py-2.5 rounded-xl text-sm font-bold bg-emerald-700 text-white hover:bg-emerald-800 transition cursor-pointer">
+              + สร้างใบขอเบิกสินค้า
+            </button>
+          </div>
+        `
+        : myReqs.map(req => renderRequisitionSummaryCard(req, false)).join('');
+
+      return `
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+          <div>
+            <h3 class="text-lg font-bold text-slate-900">ประวัติใบขอเบิกของสาขา — ${escapeHtml(account.label)}</h3>
+            <p class="text-xs sm:text-sm text-slate-500">ตรวจสอบสถานะใบเบิก เปรียบเทียบจำนวนที่ขอเบิกกับจำนวนที่คลังกลางอนุมัติจ่ายจริง</p>
+          </div>
+          <button
+            onclick="switchTab('branch_requisition')"
+            class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs transition self-start sm:self-center cursor-pointer"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+            <span>สร้างใบขอเบิกใหม่</span>
+          </button>
+        </div>
+
+        <div class="space-y-4">
+          ${cardsHtml}
+        </div>
+      `;
+    }
+
+    /**
+     * การ์ดสรุปรายละเอียดใบเบิก (ใช้แสดงผลทั้งฝั่งสาขาและประวัติฝั่ง Admin)
+     */
+    function renderRequisitionSummaryCard(req, showBranchName = false) {
+      const branchAcc = getAccount(req.branchId);
+
+      const statusConfig = {
+        pending: {
+          label: 'รออนุมัติจากคลังกลาง',
+          badge: 'bg-amber-100 text-amber-800 border-amber-200',
+          border: 'border-amber-200'
+        },
+        approved_full: {
+          label: 'อนุมัติครบ',
+          badge: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+          border: 'border-emerald-200'
+        },
+        approved_partial: {
+          label: 'อนุมัติบางส่วน',
+          badge: 'bg-amber-500 text-white border-amber-500',
+          border: 'border-amber-300'
+        },
+        rejected: {
+          label: 'ปฏิเสธคำขอ',
+          badge: 'bg-rose-100 text-rose-700 border-rose-200',
+          border: 'border-rose-200'
+        }
+      };
+
+      const st = statusConfig[req.status] || statusConfig.pending;
+
+      const itemsHtml = req.items.map(item => {
+        const prod = getProduct(item.productId);
+        const prodName = prod ? prod.name : item.productId;
+        const unit = prod ? prod.unit : 'หน่วย';
+
+        let actualDisplay = '';
+        if (req.status === 'pending') {
+          actualDisplay = `<span class="text-xs text-slate-400 italic">รอพิจารณา...</span>`;
+        } else if (req.status === 'rejected') {
+          actualDisplay = `<span class="text-xs font-bold text-rose-600">0 ${escapeHtml(unit)} (ไม่อนุมัติ)</span>`;
+        } else {
+          const isItemPartial = item.approvedQty < item.requestedQty;
+          actualDisplay = `
+            <span class="text-sm font-extrabold tabular-nums ${isItemPartial ? 'text-amber-700' : 'text-emerald-700'}">
+              ${item.approvedQty} ${escapeHtml(unit)}
+            </span>
+            ${isItemPartial
+              ? `<span class="ml-1.5 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">แบ่งจ่าย</span>`
+              : `<span class="ml-1.5 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">ครบจำนวน</span>`
+            }
+          `;
+        }
+
+        return `
+          <tr class="border-b border-slate-100 last:border-none">
+            <td class="py-2.5 px-4 text-sm font-medium text-slate-800">${escapeHtml(prodName)}</td>
+            <td class="py-2.5 px-4 text-center text-sm font-semibold text-slate-700 tabular-nums">${item.requestedQty} ${escapeHtml(unit)}</td>
+            <td class="py-2.5 px-4 text-center">${actualDisplay}</td>
+          </tr>
+        `;
+      }).join('');
+
+      return `
+        <div class="bg-white rounded-2xl border ${st.border} shadow-2xs overflow-hidden">
+          <div class="px-5 py-3.5 bg-slate-50 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex flex-wrap items-center gap-2.5">
+              <span class="font-mono text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-800 text-white">${escapeHtml(req.id)}</span>
+              ${showBranchName && branchAcc ? `<span class="text-sm font-bold text-emerald-800">${escapeHtml(branchAcc.fullTitle)}</span>` : ''}
+              <span class="text-xs text-slate-500">ส่งเมื่อ: ${formatThaiDateTime(req.createdAt)}</span>
+              ${req.processedAt ? `<span class="text-xs text-slate-500">• ดำเนินการเมื่อ: ${formatThaiDateTime(req.processedAt)}</span>` : ''}
+            </div>
+            <span class="px-3 py-1 rounded-full text-xs font-bold border ${st.badge}">
+              ${st.label}
+            </span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="text-[11px] font-bold text-slate-500 uppercase border-b border-slate-100 bg-slate-50/40">
+                  <th class="py-2 px-4">รายการสินค้า</th>
+                  <th class="py-2 px-4 text-center">ขอเบิกกี่หน่วย</th>
+                  <th class="py-2 px-4 text-center">คลังกลางอนุมัติจ่ายจริงกี่หน่วย</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${itemsHtml}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="px-5 py-3 bg-slate-50/70 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div class="text-slate-600">
+              <strong>หมายเหตุสาขา:</strong> ${escapeHtml(req.branchNote || '-')}
+            </div>
+            ${req.adminNote
+              ? `<div class="text-emerald-900 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg">
+                  <strong>หมายเหตุจากผู้ดูแลคลังกลาง:</strong> ${escapeHtml(req.adminNote)}
+                </div>`
+              : ''
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // 15. MAIN APPLICATION RENDER ORCHESTRATOR
+    // =========================================================================
+    function renderApp() {
+      const rootEl = document.getElementById('appRoot');
+      const account = getAccount(appState.currentUser);
+
+      // หากยังไม่ได้ล็อคอิน แสดงหน้า Login
+      if (!account) {
+        rootEl.innerHTML = renderLoginScreen();
+        return;
+      }
+
+      // ตรวจสอบสิทธิ์การเข้าถึงแท็บตาม Role-Based Access Control
+      let contentHtml = '';
+      if (account.roleType === 'admin') {
+        if (appState.activeTab === 'inspector') {
+          contentHtml = renderAdminBranchInspector();
+        } else if (appState.activeTab === 'central') {
+          contentHtml = renderAdminCentralWarehouse();
+        } else if (appState.activeTab === 'history') {
+          contentHtml = renderAdminAuditLogs();
+        } else {
+          appState.activeTab = 'approvals';
+          contentHtml = renderAdminApprovals();
+        }
+      } else {
+        if (appState.activeTab === 'branch_requisition') {
+          contentHtml = renderBranchRequisitionBuilder(account);
+        } else if (appState.activeTab === 'branch_history') {
+          contentHtml = renderBranchRequisitionHistory(account);
+        } else {
+          appState.activeTab = 'branch_stock';
+          contentHtml = renderBranchStockAndPOS(account);
+        }
+      }
+
+      rootEl.innerHTML = renderAuthenticatedShell(account, contentHtml);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      renderApp();
+    });
+  </script>
+</body>
+</html>

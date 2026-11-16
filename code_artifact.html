@@ -1256,177 +1256,97 @@
     }
 
     // =========================================================================
-    // 8. LOGIN SCREEN RENDERER (AUTHENTICATION + DEMO QUICK LOGIN)
+    // 8. LOGIN SCREEN RENDERER (ROLE-BASED LOGIN DASHBOARD)
     // =========================================================================
     function renderLoginScreen() {
-      const quickCardsHtml = USER_ACCOUNTS.map(acc => {
+      const accountCardsHtml = USER_ACCOUNTS.map(acc => {
         const isAdmin = acc.roleType === 'admin';
+        const accountCode = isAdmin ? 'ADM' : `B${acc.id.replace('branch', '')}`;
         return `
           <button
             type="button"
             onclick="loginWithAccount('${acc.id}')"
-            class="group text-left p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+            aria-label="เข้าสู่ระบบ ${escapeHtml(acc.fullTitle)}"
+            class="group relative overflow-hidden text-left p-5 sm:p-6 rounded-2xl border transition-all duration-200 cursor-pointer ${
               isAdmin
-                ? 'bg-amber-50/80 hover:bg-amber-100/90 border-amber-300 hover:border-amber-400'
-                : 'bg-slate-50 hover:bg-emerald-50/90 border-slate-200 hover:border-emerald-400'
-            }"
+                ? 'bg-amber-50 border-amber-200 hover:border-amber-400 hover:bg-amber-100 hover:-translate-y-1'
+                : 'bg-white border-slate-200 hover:border-emerald-400 hover:bg-emerald-50 hover:-translate-y-1'
+            } shadow-sm hover:shadow-lg"
           >
-            <div class="flex items-center gap-3 min-w-0">
-              <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold text-sm ${
-                isAdmin
-                  ? 'bg-amber-500 text-emerald-950 shadow-xs'
-                  : 'bg-emerald-700 text-white shadow-xs'
-              }">
-                ${isAdmin ? 'ADM' : acc.id.replace('branch', 'B')}
+            <div class="flex items-start justify-between gap-4">
+              <div class="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-bold ${
+                isAdmin ? 'bg-amber-400 text-emerald-950' : 'bg-emerald-700 text-white'
+              } shadow-md">
+                ${accountCode}
               </div>
-              <div class="min-w-0">
-                <div class="font-bold text-sm text-slate-900 truncate">${escapeHtml(acc.label)}</div>
-                <div class="text-[11px] font-mono text-slate-500 mt-0.5">
-                  User: <strong class="text-slate-700">${escapeHtml(acc.username)}</strong> | Pass: <strong class="text-slate-700">1234</strong>
-                </div>
-              </div>
+              <svg class="w-5 h-5 mt-1 text-slate-300 group-hover:text-emerald-600 transition" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M4 12h16" />
+              </svg>
             </div>
-            <span class="px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 transition ${
-              isAdmin
-                ? 'bg-amber-500/20 text-amber-900 group-hover:bg-amber-500 group-hover:text-emerald-950'
-                : 'bg-emerald-600/10 text-emerald-800 group-hover:bg-emerald-700 group-hover:text-white'
-            }">
-              เข้าสู่ระบบ →
-            </span>
+            <div class="mt-5">
+              <div class="text-base font-bold text-slate-900">${escapeHtml(acc.label)}</div>
+              <div class="text-xs leading-relaxed text-slate-500 mt-1">${escapeHtml(acc.subtitle)}</div>
+            </div>
+            <div class="mt-5 text-xs font-bold ${isAdmin ? 'text-amber-800' : 'text-emerald-800'}">
+              เข้าใช้งานแดชบอร์ด
+            </div>
           </button>
         `;
       }).join('');
 
       return `
-        <div class="min-h-screen flex flex-col justify-center items-center bg-gradient-to-br from-emerald-950 via-emerald-900 to-slate-900 p-4 sm:p-6">
-          <div class="max-w-4xl w-full grid grid-cols-1 lg:grid-cols-12 bg-white rounded-3xl shadow-2xl overflow-hidden border border-emerald-800/30">
-            
-            <!-- Left Branding & System Info Panel -->
-            <div class="lg:col-span-5 bg-emerald-900 text-white p-7 sm:p-8 flex flex-col justify-between relative overflow-hidden">
-              <div class="relative z-10">
-                <div class="w-14 h-14 rounded-2xl bg-amber-500 text-emerald-950 flex items-center justify-center shadow-lg mb-5">
-                  <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 21h18M3 10l9-7 9 7v11H3V10z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 21v-6a2 2 0 012-2h2a2 2 0 012 2v6" />
+        <div class="min-h-screen flex items-center justify-center bg-slate-100 p-4 sm:p-8">
+          <main class="w-full max-w-5xl">
+            <section class="relative overflow-hidden rounded-[2rem] bg-emerald-950 text-white shadow-2xl">
+              <div class="absolute -right-24 -top-32 h-80 w-80 rounded-full bg-emerald-700/40 blur-3xl"></div>
+              <div class="absolute -bottom-36 -left-20 h-80 w-80 rounded-full bg-amber-400/10 blur-3xl"></div>
+              <div class="relative px-6 py-10 sm:px-12 sm:py-14">
+                <div class="flex flex-col items-center text-center">
+                  <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-400 text-emerald-950 shadow-lg">
+                    <svg class="h-9 w-9" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M3 21h18M3 10l9-7 9 7v11H3V10z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 21v-6a2 2 0 012-2h2a2 2 0 012 2v6" />
+                    </svg>
+                  </div>
+                  <div class="mt-6 text-xs font-bold uppercase tracking-[0.3em] text-amber-300">AgriFeed WMS</div>
+                  <h1 class="mt-3 text-2xl font-bold tracking-tight sm:text-4xl">ระบบจัดการคลังสินค้าอาหารสัตว์</h1>
+                  <p class="mt-3 max-w-2xl text-sm leading-relaxed text-emerald-200 sm:text-base">
+                    ศูนย์กลางจัดการคลังสินค้า การกระจายสินค้า และสต็อกของทั้ง 3 สาขา
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <section class="mt-6 rounded-[2rem] bg-white p-6 shadow-xl sm:p-10">
+              <div class="flex flex-col gap-2 text-center">
+                <h2 class="text-xl font-bold text-slate-900 sm:text-2xl">เลือกแดชบอร์ดเพื่อเข้าสู่ระบบ</h2>
+                <p class="text-sm text-slate-500">เลือกพื้นที่การทำงานของคุณเพื่อเริ่มต้นใช้งาน</p>
+              </div>
+
+              ${loginErrorMessage ? `
+                <div class="mx-auto mt-5 flex max-w-2xl items-center gap-2.5 rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-sm text-rose-700">
+                  <svg class="h-5 w-5 shrink-0 text-rose-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0z" />
                   </svg>
+                  <span>${escapeHtml(loginErrorMessage)}</span>
                 </div>
-                <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-400/30 mb-3">
-                  AgriFeed WMS • Multi-Branch
-                </span>
-                <h1 class="text-2xl sm:text-3xl font-bold leading-snug tracking-tight">
-                  ระบบจัดการคลังสินค้าอาหารสัตว์
-                </h1>
-                <p class="text-sm text-emerald-200 mt-3 leading-relaxed">
-                  ศูนย์กระจายสินค้าคลังกลางและเครือข่ายร้านค้าย่อยทั้ง 3 สาขา รองรับการขอเบิกสินค้า การอนุมัติแบ่งจ่าย (Partial Fulfillment) และการตรวจสอบสต็อกรายสาขาแบบเรียลไทม์
-                </p>
+              ` : ''}
+
+              <div class="mt-7 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                ${accountCardsHtml}
               </div>
 
-              <div class="relative z-10 mt-8 pt-6 border-t border-emerald-800/80 space-y-2.5 text-xs text-emerald-200">
-                <div class="flex items-center gap-2">
-                  <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-                  <span><strong>Admin คลังกลาง:</strong> อนุมัติแบ่งจ่าย &amp; ตรวจสอบสต็อกทุกสาขา</span>
-                </div>
-                <div class="flex items-center gap-2">
-                  <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-                  <span><strong>User สาขา 1–3:</strong> จัดการหน้าร้าน ขายสินค้า &amp; ส่งใบเบิก</span>
-                </div>
+              <div class="mt-8 flex justify-center border-t border-slate-100 pt-6">
+                <button
+                  type="button"
+                  onclick="openResetModal()"
+                  class="text-xs font-semibold text-slate-400 transition hover:text-emerald-700 cursor-pointer"
+                >
+                  รีเซ็ตข้อมูลระบบ
+                </button>
               </div>
-            </div>
-
-            <!-- Right Login Form & Demo Quick Login Panel -->
-            <div class="lg:col-span-7 p-7 sm:p-9 flex flex-col justify-between bg-white">
-              <div>
-                <div class="flex items-center justify-between mb-6">
-                  <div>
-                    <h2 class="text-xl sm:text-2xl font-bold text-slate-900">เข้าสู่ระบบ (Sign In)</h2>
-                    <p class="text-xs sm:text-sm text-slate-500 mt-0.5">กรอกชื่อผู้ใช้งานและรหัสผ่าน หรือเลือกเข้าสู่ระบบด่วนด้านล่าง</p>
-                  </div>
-                  <button
-                    type="button"
-                    onclick="openResetModal()"
-                    title="รีเซ็ตข้อมูลทดสอบเริ่มต้น"
-                    class="px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer"
-                  >
-                    รีเซ็ตข้อมูล
-                  </button>
-                </div>
-
-                ${loginErrorMessage ? `
-                  <div class="mb-4 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs sm:text-sm flex items-center gap-2.5">
-                    <svg class="w-5 h-5 shrink-0 text-rose-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>${escapeHtml(loginErrorMessage)}</span>
-                  </div>
-                ` : ''}
-
-                <!-- Standard Login Form -->
-                <form onsubmit="handleLoginSubmit(event)" class="space-y-4">
-                  <div>
-                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">ชื่อผู้ใช้งาน (Username)</label>
-                    <input
-                      type="text"
-                      id="loginUsernameInput"
-                      placeholder="เช่น admin, branch1, branch2, branch3"
-                      autocomplete="username"
-                      required
-                      class="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 outline-none transition"
-                    />
-                  </div>
-
-                  <div>
-                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">รหัสผ่าน (Password)</label>
-                    <div class="relative">
-                      <input
-                        type="${showLoginPassword ? 'text' : 'password'}"
-                        id="loginPasswordInput"
-                        placeholder="กรอกรหัสผ่าน (1234)"
-                        autocomplete="current-password"
-                        required
-                        class="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 outline-none transition pr-12"
-                      />
-                      <button
-                        type="button"
-                        onclick="toggleLoginPasswordVisibility()"
-                        class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-                        title="แสดง/ซ่อนรหัสผ่าน"
-                      >
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    class="w-full py-3 rounded-xl text-sm font-bold bg-emerald-700 hover:bg-emerald-800 text-white shadow-md transition cursor-pointer"
-                  >
-                    เข้าสู่ระบบ
-                  </button>
-                </form>
-              </div>
-
-              <!-- Demo Quick Login Section -->
-              <div class="mt-7 pt-6 border-t border-slate-200">
-                <div class="flex items-center justify-between mb-3">
-                  <span class="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                    <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    <span>เข้าสู่ระบบด่วน (Demo Quick Login)</span>
-                  </span>
-                  <span class="text-[11px] text-slate-400">คลิกเดียวเพื่อสลับทดสอบสิทธิ์</span>
-                </div>
-
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  ${quickCardsHtml}
-                </div>
-              </div>
-            </div>
-
-          </div>
+            </section>
+          </main>
         </div>
       `;
     }

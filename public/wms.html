@@ -80,6 +80,133 @@
     input[type='number'] {
       -moz-appearance: textfield;
     }
+
+    :root {
+      --af-ink: #132238;
+      --af-muted: #64748b;
+      --af-line: #dce5e8;
+      --af-surface: #ffffff;
+      --af-canvas: #f3f7f6;
+      --af-forest: #063b32;
+      --af-teal: #087f6a;
+      --af-mint: #d9f4e8;
+      --af-gold: #f5b942;
+      --af-coral: #e85d5d;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at 8% 0%, rgba(217, 244, 232, 0.75), transparent 28rem),
+        var(--af-canvas);
+      color: var(--af-ink);
+    }
+
+    #appRoot > .flex-1 {
+      background: transparent;
+    }
+
+    #appRoot .af-topbar {
+      background: linear-gradient(110deg, #042f2a 0%, var(--af-forest) 58%, #0c5a4b 100%);
+      border-bottom: 1px solid rgba(245, 185, 66, 0.28);
+      box-shadow: 0 10px 30px rgba(6, 59, 50, 0.2);
+    }
+
+    #appRoot .af-topbar .max-w-\[1600px\],
+    #appRoot .af-role-hero .max-w-\[1600px\],
+    #appRoot .af-content,
+    #appRoot .af-footer > div {
+      max-width: 1440px;
+    }
+
+    #appRoot .af-role-hero {
+      background:
+        radial-gradient(circle at 88% 20%, rgba(245, 185, 66, 0.18), transparent 18rem),
+        linear-gradient(135deg, #063b32 0%, #087f6a 62%, #164c4a 100%);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    #appRoot .af-role-hero h2 {
+      max-width: 900px;
+      font-size: clamp(2rem, 5vw, 4.25rem);
+      line-height: 1.08;
+      letter-spacing: -0.035em;
+      text-wrap: balance;
+    }
+
+    #appRoot .af-role-hero nav button {
+      min-height: 44px;
+      border-radius: 999px;
+      transition: transform 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+    }
+
+    #appRoot .af-role-hero nav button:hover {
+      transform: translateY(-2px);
+    }
+
+    #appRoot .af-role-hero nav button.bg-white {
+      box-shadow: 0 8px 18px rgba(4, 47, 42, 0.22);
+    }
+
+    #appRoot .af-content {
+      background: transparent;
+    }
+
+    #appRoot .af-content > div > .bg-white,
+    #appRoot .af-content > .bg-white,
+    #appRoot .af-content .bg-white.rounded-2xl {
+      border-color: var(--af-line);
+      border-radius: 1.25rem;
+      box-shadow: 0 14px 36px rgba(19, 34, 56, 0.07);
+    }
+
+    #appRoot .af-content h3,
+    #appRoot .af-content h4 {
+      color: var(--af-ink);
+      letter-spacing: -0.015em;
+    }
+
+    #appRoot .af-content button,
+    #appRoot .af-content select,
+    #appRoot .af-content input,
+    #appRoot .af-content textarea {
+      min-height: 44px;
+    }
+
+    #appRoot .af-content button {
+      transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+    }
+
+    #appRoot .af-content button:hover {
+      transform: translateY(-1px);
+    }
+
+    #appRoot .af-footer {
+      background: rgba(255, 255, 255, 0.76);
+      border-color: var(--af-line);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #appRoot .af-role-hero nav button,
+      #appRoot .af-content button {
+        transition: none;
+      }
+
+      #appRoot .af-role-hero nav button:hover,
+      #appRoot .af-content button:hover {
+        transform: none;
+      }
+    }
+
+    @media (max-width: 640px) {
+      #appRoot .af-role-hero h2 {
+        font-size: 2rem;
+      }
+
+      #appRoot .af-role-hero nav button {
+        flex: 1 1 100%;
+        justify-content: center;
+      }
+    }
   </style>
 </head>
 <body class="min-h-screen flex flex-col bg-slate-50 text-slate-800 antialiased">
@@ -1436,7 +1563,7 @@
 
       return `
         <!-- Top Sticky Navbar -->
-        <header class="sticky top-0 z-40 bg-emerald-950 text-white shadow-xl border-b border-emerald-800/80">
+        <header class="af-topbar sticky top-0 z-40 bg-emerald-950 text-white shadow-xl border-b border-emerald-800/80">
           <div class="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-10">
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between py-4 gap-4">
               
@@ -1495,7 +1622,7 @@
         </header>
 
         <!-- Active Role Hero & Navigation Tabs -->
-        <div class="relative overflow-hidden bg-gradient-to-br ${palette.hero} text-white">
+        <div class="af-role-hero relative overflow-hidden bg-gradient-to-br ${palette.hero} text-white">
           <div class="absolute -right-24 -top-32 w-96 h-96 rounded-full ${palette.glow} blur-3xl"></div>
           <div class="relative max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-10 pt-8 pb-7">
             <div class="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-7">
@@ -1521,12 +1648,12 @@
         </div>
 
         <!-- Main Workspace Content -->
-        <main class="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-10 py-8 bg-slate-50/80">
+        <main class="af-content flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-10 py-8 bg-slate-50/80">
           ${contentHtml}
         </main>
 
         <!-- Footer -->
-        <footer class="bg-white border-t border-slate-200 py-4 mt-10">
+        <footer class="af-footer bg-white border-t border-slate-200 py-4 mt-10">
           <div class="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-10 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
             <p>ระบบบริหารจัดการคลังสินค้าอาหารสัตว์และสัตว์เลี้ยง (AgriFeed Inventory Management)</p>
             <p class="flex items-center gap-1.5">
